@@ -1,30 +1,28 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+export function middleware(request: NextRequest) {
+  const token = request.cookies.get("gc_token")?.value;
 
-  // allow auth + internals
-  if (pathname.startsWith("/login") || pathname.startsWith("/_next") || pathname.startsWith("/api")) {
+  const { pathname } = request.nextUrl;
+
+  // allow login page
+  if (pathname.startsWith("/login")) {
     return NextResponse.next();
   }
 
-  // protect these areas
-  const isProtected = pathname.startsWith("/dashboard") || pathname.startsWith("/projects");
-
-  if (!isProtected) return NextResponse.next();
-
-  const authed = !!req.cookies.get("gc_auth")?.value;
-  if (!authed) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("next", "/dashboard"); // ✅ always go to dashboard after login
-    return NextResponse.redirect(url);
+  // if no token redirect to login
+  if (!token) {
+    const loginUrl = new URL("/login", request.url);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/projects/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/projects/:path*",
+  ],
 };
