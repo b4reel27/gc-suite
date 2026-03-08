@@ -1,0 +1,666 @@
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
+import { Pool } from "pg";
+import multer from "multer";
+import path from "path";
+
+dotenv.config();
+
+const app = express();
+app.use(cors());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
+app.use(express.json());
+
+// Serve uploaded files publicly
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
+
+// --- auth helpers ---
+function isUuid(v) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(v || "")
+  );
+}
+
+function signSessionToken(userId) {
+  return jwt.sign({ userId, purpose: "session" }, JWT_SECRET, { expiresIn: "7d" });
+}
+
+function requireAuth(req, res, next) {
+  const hdr = req.headers.authorization || "";
+  const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
+  if (!token) return res.status(401).json({ error: "Missing token" });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.purpose !== "session") {
+      return res.status(401).json({ error: "Invalid token purpose" });
+    }
+    req.userId = decoded.userId;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+// Multer upload config (stores files in /uploads)
+const upload = multer({
+  dest: "uploads/",
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
+});
+
+// --- health ---
+app.get("/health", (_, res) => res.json({ ok: true }));
+
+// --- DEV LOGIN (email -> session token) ---
+app.post("/auth/dev-login", async (req, res) => {
+  try {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({ error: "Dev login disabled in production" });
+    }
+
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: "email required" });
+
+    const { rows } = await pool.query(
+      `SELECT id, email, name FROM users WHERE lower(email)=lower($1)`,
+      [email]
+    );
+    const user = rows[0];
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const token = signSessionToken(user.id);
+    res.json({ token, user });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// --- Projects for current user ---
+app.get("/projects", requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.id, p.name, p.location, pm.role
+       FROM projects p
+       JOIN project_members pm ON pm.project_id = p.id
+       WHERE pm.user_id = $1
+       ORDER BY p.name`,
+      [req.userId]
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ----------------------
+// PUNCH ROUTES
+// ----------------------
+
+// Shared handler: Get punch items for a project with photo_count
+const getPunchForProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    const member = await pool.query(
+      `SELECT pm.role, pm.company_id
+       FROM project_members pm
+       WHERE pm.project_id = $1 AND pm.user_id = $2`,
+      [projectId, req.userId]
+    );
+
+    if (!member.rows[0]) return res.status(403).json({ error: "Not in project" });
+
+    const { role, company_id } = member.rows[0];
+
+    let result;
+
+    // GC sees all punch items
+    if (String(role || "").startsWith("GC")) {
+      result = await pool.query(
+        `SELECT
+           i.*,
+           COALESCE(COUNT(pp.id), 0) AS photo_count
+         FROM issues i
+         LEFT JOIN punch_photos pp ON pp.punch_id = i.id
+         WHERE i.project_id = $1
+         GROUP BY i.id
+         ORDER BY i.created_at DESC`,
+        [projectId]
+      );
+    } else {
+      // Subs see only punch items assigned to their company
+      result = await pool.query(
+        `SELECT
+           i.*,
+           COALESCE(COUNT(pp.id), 0) AS photo_count
+         FROM issues i
+         LEFT JOIN punch_photos pp ON pp.punch_id = i.id
+         WHERE i.project_id = $1 AND i.assigned_company_id = $2
+         GROUP BY i.id
+         ORDER BY i.created_at DESC`,
+        [projectId, company_id]
+      );
+    }
+
+    res.json(result.rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// Shared handler: Create punch item (GC only)
+const createPunchForProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { title, location, trade, assigned_company_id, due_date } = req.body;
+
+    const member = await pool.query(
+      `SELECT role FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [projectId, req.userId]
+    );
+
+    if (!member.rows[0] || !String(member.rows[0].role || "").startsWith("GC")) {
+      return res.status(403).json({ error: "Only GC can create punch items" });
+    }
+
+    const insert = await pool.query(
+      `INSERT INTO issues
+       (project_id, title, location, trade, status, created_by_user_id, assigned_company_id, due_date)
+       VALUES ($1,$2,$3,$4,'OPEN',$5,$6,$7)
+       RETURNING *`,
+      [projectId, title, location, trade, req.userId, assigned_company_id, due_date]
+    );
+
+    res.json(insert.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// Support BOTH route shapes (frontend has used both)
+app.get("/punch/:projectId", requireAuth, getPunchForProject);
+app.get("/projects/:projectId/punch", requireAuth, getPunchForProject);
+
+app.post("/punch/:projectId", requireAuth, createPunchForProject);
+app.post("/projects/:projectId/punch", requireAuth, createPunchForProject);
+
+// membership helper for a project
+app.get("/projects/:projectId/me", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { rows } = await pool.query(
+      `SELECT pm.role, pm.company_id
+       FROM project_members pm
+       WHERE pm.project_id = $1 AND pm.user_id = $2`,
+      [projectId, req.userId]
+    );
+    if (!rows[0]) return res.status(403).json({ error: "Not in project" });
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// mark punch complete (sub can only complete items assigned to their company)
+app.post("/punch/:issueId/complete", requireAuth, async (req, res) => {
+  try {
+    const { issueId } = req.params;
+
+    if (!isUuid(issueId)) {
+      return res.status(400).json({ error: "Invalid issueId" });
+    }
+
+    const issueQ = await pool.query(
+      `SELECT id, project_id, assigned_company_id, status
+       FROM issues
+       WHERE id = $1`,
+      [issueId]
+    );
+    const issue = issueQ.rows[0];
+    if (!issue) return res.status(404).json({ error: "Issue not found" });
+
+    const memQ = await pool.query(
+      `SELECT role, company_id
+       FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [issue.project_id, req.userId]
+    );
+    const mem = memQ.rows[0];
+    if (!mem) return res.status(403).json({ error: "Not in project" });
+
+    const isGC = String(mem.role || "").startsWith("GC");
+    if (!isGC && mem.company_id !== issue.assigned_company_id) {
+      return res.status(403).json({ error: "Not your company’s punch item" });
+    }
+
+    if (issue.status === "CLOSED") {
+      return res.status(400).json({ error: "Already closed" });
+    }
+
+    const updated = await pool.query(
+      `UPDATE issues
+       SET status='PENDING_VERIFICATION', completed_at=NOW()
+       WHERE id=$1
+       RETURNING *`,
+      [issueId]
+    );
+    res.json(updated.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// close punch (GC only)
+app.post("/punch/:issueId/close", requireAuth, async (req, res) => {
+  try {
+    const { issueId } = req.params;
+
+    if (!isUuid(issueId)) {
+      return res.status(400).json({ error: "Invalid issueId" });
+    }
+
+    const issueQ = await pool.query(
+      `SELECT id, project_id
+       FROM issues
+       WHERE id = $1`,
+      [issueId]
+    );
+    const issue = issueQ.rows[0];
+    if (!issue) return res.status(404).json({ error: "Issue not found" });
+
+    const memQ = await pool.query(
+      `SELECT role
+       FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [issue.project_id, req.userId]
+    );
+    const mem = memQ.rows[0];
+    if (!mem) return res.status(403).json({ error: "Not in project" });
+
+    if (!String(mem.role || "").startsWith("GC")) {
+      return res.status(403).json({ error: "Only GC can close items" });
+    }
+
+    const updated = await pool.query(
+      `UPDATE issues
+       SET status='CLOSED', closed_at=NOW()
+       WHERE id=$1
+       RETURNING *`,
+      [issueId]
+    );
+    res.json(updated.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * Upload photo for punch issue
+ * POST /punch/:issueId/photo (multipart field name: "photo")
+ */
+app.post("/punch/:issueId/photo", requireAuth, upload.single("photo"), async (req, res) => {
+  try {
+    const { issueId } = req.params;
+
+    if (!isUuid(issueId)) return res.status(400).json({ error: "Invalid issueId" });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const issueQ = await pool.query(
+      `SELECT id, project_id, assigned_company_id
+       FROM issues
+       WHERE id = $1`,
+      [issueId]
+    );
+    const issue = issueQ.rows[0];
+    if (!issue) return res.status(404).json({ error: "Issue not found" });
+
+    const memQ = await pool.query(
+      `SELECT role, company_id
+       FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [issue.project_id, req.userId]
+    );
+    const mem = memQ.rows[0];
+    if (!mem) return res.status(403).json({ error: "Not in project" });
+
+    const userIsGC = String(mem.role || "").startsWith("GC");
+    if (!userIsGC && mem.company_id !== issue.assigned_company_id) {
+      return res.status(403).json({ error: "Not your company’s punch item" });
+    }
+
+    const filePath = `/uploads/${req.file.filename}`;
+
+    const { rows } = await pool.query(
+      `INSERT INTO punch_photos
+        (punch_id, file_path, original_name, mime_type, size_bytes, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [issueId, filePath, req.file.originalname, req.file.mimetype, req.file.size, req.userId]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * List photos for a punch issue
+ * GET /punch/:issueId/photos
+ */
+app.get("/punch/:issueId/photos", requireAuth, async (req, res) => {
+  try {
+    const { issueId } = req.params;
+
+    if (!isUuid(issueId)) return res.status(400).json({ error: "Invalid issueId" });
+
+    const issueQ = await pool.query(
+      `SELECT id, project_id, assigned_company_id
+       FROM issues
+       WHERE id = $1`,
+      [issueId]
+    );
+    const issue = issueQ.rows[0];
+    if (!issue) return res.status(404).json({ error: "Issue not found" });
+
+    const memQ = await pool.query(
+      `SELECT role, company_id
+       FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [issue.project_id, req.userId]
+    );
+    const mem = memQ.rows[0];
+    if (!mem) return res.status(403).json({ error: "Not in project" });
+
+    const userIsGC = String(mem.role || "").startsWith("GC");
+    if (!userIsGC && mem.company_id !== issue.assigned_company_id) {
+      return res.status(403).json({ error: "Not your company’s punch item" });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT id, file_path, original_name, mime_type, size_bytes, created_at
+       FROM punch_photos
+       WHERE punch_id = $1
+       ORDER BY created_at DESC`,
+      [issueId]
+    );
+
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Companies on a project (for dropdowns)
+app.get("/projects/:projectId/companies", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    // must be in project
+    const mem = await pool.query(
+      `SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2`,
+      [projectId, req.userId]
+    );
+    if (!mem.rows[0]) return res.status(403).json({ error: "Not in project" });
+
+    // companies that have at least one member on the project
+    const { rows } = await pool.query(
+      `SELECT DISTINCT c.id, c.name, c.type
+       FROM companies c
+       JOIN project_members pm ON pm.company_id = c.id
+       WHERE pm.project_id = $1
+       ORDER BY c.type, c.name`,
+      [projectId]
+    );
+
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ----------------------
+// SCHEDULE ROUTES
+// ----------------------
+
+// Get schedule items for project
+app.get("/schedule/:projectId", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    const memQ = await pool.query(
+      `SELECT role, company_id
+       FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [projectId, req.userId]
+    );
+
+    const mem = memQ.rows[0];
+    if (!mem) return res.status(403).json({ error: "Not in project" });
+
+    const isGC = String(mem.role || "").startsWith("GC");
+
+    let result;
+
+    if (isGC) {
+      result = await pool.query(
+        `SELECT * FROM schedule_items
+         WHERE project_id = $1
+         ORDER BY start_at ASC`,
+        [projectId]
+      );
+    } else {
+      result = await pool.query(
+        `SELECT * FROM schedule_items
+         WHERE project_id = $1
+           AND (assigned_company_id = $2 OR assigned_company_id IS NULL)
+         ORDER BY start_at ASC`,
+        [projectId, mem.company_id]
+      );
+    }
+
+    res.json(result.rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Create schedule item (GC only)
+app.post("/schedule/:projectId", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { title, location, start_at, end_at, assigned_company_id } = req.body;
+
+    const memQ = await pool.query(
+      `SELECT role FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [projectId, req.userId]
+    );
+
+    const mem = memQ.rows[0];
+    if (!mem || !String(mem.role || "").startsWith("GC")) {
+      return res.status(403).json({ error: "Only GC can create schedule items" });
+    }
+
+    const insert = await pool.query(
+      `INSERT INTO schedule_items
+       (project_id, title, location, start_at, end_at, assigned_company_id, created_by_user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING *`,
+      [projectId, title, location, start_at, end_at, assigned_company_id || null, req.userId]
+    );
+
+    res.json(insert.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ----------------------
+// SCHEDULE STATUS ACTIONS
+// ----------------------
+
+// Mark schedule item DONE (SUB can only do items assigned to their company)
+app.post("/schedule-item/:id/done", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const itemQ = await pool.query(
+      `SELECT id, project_id, assigned_company_id, status
+       FROM schedule_items
+       WHERE id = $1`,
+      [id]
+    );
+    const item = itemQ.rows[0];
+    if (!item) return res.status(404).json({ error: "Not found" });
+
+    const memQ = await pool.query(
+      `SELECT role, company_id
+       FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [item.project_id, req.userId]
+    );
+    const mem = memQ.rows[0];
+    if (!mem) return res.status(403).json({ error: "Not in project" });
+
+    const isGC = String(mem.role || "").startsWith("GC");
+
+    // subs can only mark DONE for items assigned to their company
+    if (!isGC && item.assigned_company_id !== mem.company_id) {
+      return res.status(403).json({ error: "Not your company’s schedule item" });
+    }
+
+    if (item.status === "CANCELED") return res.status(400).json({ error: "Item is canceled" });
+
+    const updated = await pool.query(
+      `UPDATE schedule_items
+       SET status = 'DONE'
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    res.json(updated.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Verify schedule item (GC only)
+app.post("/schedule-item/:id/verify", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const q = await pool.query(
+      `SELECT si.id, si.status, si.project_id, pm.role
+       FROM schedule_items si
+       JOIN project_members pm ON pm.project_id = si.project_id
+       WHERE si.id = $1 AND pm.user_id = $2`,
+      [id, req.userId]
+    );
+
+    const row = q.rows[0];
+    if (!row) return res.status(404).json({ error: "Item not found" });
+
+    const role = row.role;
+    const isGC = role === "GC_ADMIN" || role === "GC_PM" || role === "GC";
+    if (!isGC) return res.status(403).json({ error: "Forbidden" });
+
+    if (row.status === "CANCELED") {
+      return res.status(409).json({ error: "Item is canceled" });
+    }
+    if (row.status !== "DONE") {
+      return res.status(409).json({
+        error: "Only DONE items can be verified",
+        currentStatus: row.status,
+      });
+    }
+
+    const updated = await pool.query(
+      `UPDATE schedule_items
+       SET status = 'VERIFIED'
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    res.json(updated.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Cancel schedule item (GC only)
+app.post("/schedule-item/:id/cancel", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const itemQ = await pool.query(
+      `SELECT id, project_id
+       FROM schedule_items
+       WHERE id = $1`,
+      [id]
+    );
+    const item = itemQ.rows[0];
+    if (!item) return res.status(404).json({ error: "Not found" });
+
+    const memQ = await pool.query(
+      `SELECT role
+       FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [item.project_id, req.userId]
+    );
+    const mem = memQ.rows[0];
+    if (!mem) return res.status(403).json({ error: "Not in project" });
+
+    if (!String(mem.role || "").startsWith("GC")) {
+      return res.status(403).json({ error: "Only GC can cancel schedule items" });
+    }
+
+    const updated = await pool.query(
+      `UPDATE schedule_items
+       SET status = 'CANCELED'
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    res.json(updated.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+const port = Number(process.env.PORT || 3000);
+app.listen(port, () => console.log(`API running on http://localhost:${port}`));
