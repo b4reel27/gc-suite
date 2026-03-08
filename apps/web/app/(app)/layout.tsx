@@ -1,17 +1,30 @@
-import Link from "next/link";
-import { cookies } from "next/headers";
+"use client";
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies();
-  const activeProjectId = cookieStore.get("activeProjectId")?.value;
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const [activeProjectId, setActiveProjectId] = useState("");
+
+  useEffect(() => {
+    const id = localStorage.getItem("activeProjectId") || "";
+    setActiveProjectId(id);
+  }, []);
+
   const plansHref = activeProjectId ? `/projects/${activeProjectId}/plans` : "/projects";
+
+  function handleLogout() {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("activeProjectId");
+    window.location.href = "/login";
+  }
 
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-4">
         <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          {/* Sidebar */}
-          <aside className="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
+          <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="text-lg font-bold text-slate-900">GC Suite</div>
             <div className="mt-1 text-xs text-slate-500">Command Center</div>
 
@@ -35,16 +48,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
 
             <div className="mt-8">
-              <form action="/api/logout" method="post">
-                <button className="w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-white hover:opacity-90" type="submit">
-                  Logout
-                </button>
-              </form>
+              <button
+                onClick={handleLogout}
+                className="w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-white hover:opacity-90"
+                type="button"
+              >
+                Logout
+              </button>
             </div>
           </aside>
 
-          {/* Main */}
-          <main className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
+          <main className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             {children}
           </main>
         </div>
