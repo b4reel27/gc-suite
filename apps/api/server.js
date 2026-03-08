@@ -530,7 +530,7 @@ app.post("/auth/dev-login", async (req, res) => {
             SELECT pm.role
             FROM project_members pm
             WHERE pm.user_id = u.id
-            ORDER BY pm.created_at NULLS LAST, pm.project_id
+            ORDER BY pm.project_id
             LIMIT 1
           ),
           'USER'
@@ -565,7 +565,7 @@ app.get("/auth/me", requireAuth, async (req, res) => {
             SELECT pm.role
             FROM project_members pm
             WHERE pm.user_id = u.id
-            ORDER BY pm.created_at NULLS LAST, pm.project_id
+            ORDER BY pm.project_id
             LIMIT 1
           ),
           'USER'
