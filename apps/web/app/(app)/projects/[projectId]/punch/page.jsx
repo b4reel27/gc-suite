@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import ProjectHeader from "../../../../../components/ProjectHeader";
 
-// ✅ Token: cookie gc_auth first, then legacy cookie names, then localStorage
+// Token: cookie gc_auth first, then legacy cookie names, then localStorage
 function getToken() {
   if (typeof document === "undefined") return "";
+
   const cookieVal = (name) =>
     document.cookie
       .split("; ")
@@ -34,6 +35,44 @@ function statusUpper(s) {
   return String(s || "").toUpperCase();
 }
 
+function statusBadgeClass(status) {
+  const s = statusUpper(status);
+
+  if (s === "OPEN") {
+    return "bg-amber-100 text-amber-800 border-amber-200";
+  }
+  if (s === "IN_PROGRESS") {
+    return "bg-blue-100 text-blue-800 border-blue-200";
+  }
+  if (s === "DONE") {
+    return "bg-purple-100 text-purple-800 border-purple-200";
+  }
+  if (s === "VERIFIED") {
+    return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  }
+  if (s === "CLOSED") {
+    return "bg-slate-200 text-slate-700 border-slate-300";
+  }
+
+  return "bg-slate-100 text-slate-700 border-slate-200";
+}
+
+function prettyStatus(status) {
+  return statusUpper(status).replaceAll("_", " ");
+}
+
+function StatCard({ title, value, subtext }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {title}
+      </div>
+      <div className="mt-2 text-2xl font-bold text-slate-900">{value}</div>
+      {subtext ? <div className="mt-1 text-xs text-slate-500">{subtext}</div> : null}
+    </div>
+  );
+}
+
 export default function PunchPage() {
   const { projectId } = useParams();
 
@@ -58,7 +97,7 @@ export default function PunchPage() {
   const [newCompanyId, setNewCompanyId] = useState("");
 
   // Photo upload state per issue
-  const [uploading, setUploading] = useState({}); // { [issueId]: boolean }
+  const [uploading, setUploading] = useState({});
 
   // Photo viewer state
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
@@ -68,9 +107,11 @@ export default function PunchPage() {
 
   function getApiBase() {
     if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+
     if (typeof window !== "undefined" && window?.location?.hostname) {
       return `http://${window.location.hostname}:3005`;
     }
+
     return "http://localhost:3005";
   }
 
@@ -86,7 +127,9 @@ export default function PunchPage() {
     const base = apiBase || getApiBase();
     const token = getToken();
 
-    if (!token) throw new Error("Not logged in (token missing). Go to Login and sign in again.");
+    if (!token) {
+      throw new Error("Not logged in (token missing). Go to Login and sign in again.");
+    }
 
     const res = await fetch(`${base}${path}`, {
       ...opts,
@@ -97,6 +140,7 @@ export default function PunchPage() {
     });
 
     const ct = res.headers.get("content-type") || "";
+
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       throw new Error(txt || `Request failed (${res.status})`);
@@ -115,6 +159,7 @@ export default function PunchPage() {
     try {
       const projects = await apiFetch(`/projects`);
       const p = Array.isArray(projects) ? projects.find((x) => x.id === projectId) : null;
+
       if (p) {
         setProjectName(p.name || "");
         setProjectLocation(p.location || "");
@@ -129,6 +174,7 @@ export default function PunchPage() {
 
     async function load() {
       setError("");
+
       try {
         await loadProjectMeta();
 
@@ -169,12 +215,28 @@ export default function PunchPage() {
         : true;
 
       const qOk = q
-        ? `${it.title || ""} ${it.location || ""} ${it.trade || ""}`.toLowerCase().includes(q)
+        ? `${it.title || ""} ${it.location || ""} ${it.trade || ""}`
+            .toLowerCase()
+            .includes(q)
         : true;
 
       return statusOk && tradeOk && qOk;
     });
   }, [items, filter, query, trade]);
+
+  const stats = useMemo(() => {
+    const list = items || [];
+
+    return {
+      total: list.length,
+      open: list.filter((it) => statusUpper(it.status) === "OPEN").length,
+      inProgress: list.filter((it) => statusUpper(it.status) === "IN_PROGRESS").length,
+      done: list.filter((it) => statusUpper(it.status) === "DONE").length,
+      verified: list.filter((it) => statusUpper(it.status) === "VERIFIED").length,
+      closed: list.filter((it) => statusUpper(it.status) === "CLOSED").length,
+      photos: list.reduce((sum, it) => sum + Number(it.photo_count || 0), 0),
+    };
+  }, [items]);
 
   async function addIssue(e) {
     e.preventDefault();
@@ -211,8 +273,11 @@ export default function PunchPage() {
 
   async function setStatus(issueId, actionPath) {
     setError("");
+
     try {
-      const updated = await apiFetch(`/punch/${issueId}/${actionPath}`, { method: "POST" });
+      const updated = await apiFetch(`/punch/${issueId}/${actionPath}`, {
+        method: "POST",
+      });
 
       if (updated?.id) {
         setItems((prev) => prev.map((p) => (p.id === issueId ? updated : p)));
@@ -225,7 +290,11 @@ export default function PunchPage() {
   }
 
   async function deleteIssue(issueId) {
+    const ok = window.confirm("Delete this issue? This cannot be undone.");
+    if (!ok) return;
+
     setError("");
+
     try {
       await apiFetch(`/punch/${issueId}`, { method: "DELETE" });
       setItems((prev) => (prev || []).filter((p) => p.id !== issueId));
@@ -236,9 +305,10 @@ export default function PunchPage() {
 
   async function uploadPhoto(issueId, file) {
     if (!file) return;
-    setError("");
 
+    setError("");
     setUploading((m) => ({ ...(m || {}), [issueId]: true }));
+
     try {
       const fd = new FormData();
       fd.append("photo", file);
@@ -276,9 +346,11 @@ export default function PunchPage() {
 
   const tradeOptions = useMemo(() => {
     const set = new Set();
+
     (items || []).forEach((it) => {
       if (it.trade) set.add(String(it.trade));
     });
+
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [items]);
 
@@ -288,14 +360,17 @@ export default function PunchPage() {
     const s = statusUpper(status);
     return s === "OPEN";
   }
+
   function canDone(status) {
     const s = statusUpper(status);
     return s === "OPEN" || s === "IN_PROGRESS";
   }
+
   function canVerify(status) {
     const s = statusUpper(status);
     return s === "DONE";
   }
+
   function canClose(status) {
     const s = statusUpper(status);
     return s === "VERIFIED";
@@ -303,14 +378,17 @@ export default function PunchPage() {
 
   return (
     <div className="space-y-4">
-      <ProjectHeader projectName={projectName || "Project"} location={projectLocation || ""} />
+      <ProjectHeader
+        projectName={projectName || "Project"}
+        location={projectLocation || ""}
+      />
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Issues</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Field Issues</h1>
           {me?.role ? (
             <p className="mt-1 text-sm text-slate-600">
-              Role: <span className="font-semibold text-slate-900">{me.role}</span>
+              Signed in as <span className="font-semibold text-slate-900">{me.role}</span>
             </p>
           ) : (
             <p className="mt-1 text-xs text-slate-500">
@@ -318,6 +396,14 @@ export default function PunchPage() {
             </p>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={refreshIssues}
+          className="inline-flex w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+        >
+          Refresh
+        </button>
       </div>
 
       {error ? (
@@ -326,8 +412,26 @@ export default function PunchPage() {
         </div>
       ) : null}
 
-      {/* Create */}
-      <form onSubmit={addIssue} className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <StatCard title="Total" value={stats.total} />
+        <StatCard title="Open" value={stats.open} />
+        <StatCard title="In Progress" value={stats.inProgress} />
+        <StatCard title="Done" value={stats.done} />
+        <StatCard title="Verified" value={stats.verified} />
+        <StatCard title="Photos" value={stats.photos} />
+      </div>
+
+      <form
+        onSubmit={addIssue}
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
+        <div className="mb-3">
+          <h2 className="text-base font-semibold text-slate-900">Add Field Issue</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Fast entry for supers and PMs in the field.
+          </p>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-2">
           <div className="md:col-span-2">
             <label className="text-xs font-semibold text-slate-600">Title</label>
@@ -336,7 +440,7 @@ export default function PunchPage() {
               onChange={(e) => setNewTitle(e.target.value)}
               placeholder="Example: Caulk around windows at rear elevation"
               required
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
             />
           </div>
 
@@ -346,7 +450,7 @@ export default function PunchPage() {
               value={newTrade}
               onChange={(e) => setNewTrade(e.target.value)}
               placeholder="Example: Finish / Glazing / Electrical"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
             />
           </div>
 
@@ -356,16 +460,18 @@ export default function PunchPage() {
               value={newLocation}
               onChange={(e) => setNewLocation(e.target.value)}
               placeholder="Example: Sales floor, north wall"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
             />
           </div>
 
           <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-slate-600">Assigned Company (optional)</label>
+            <label className="text-xs font-semibold text-slate-600">
+              Assigned Company (optional)
+            </label>
             <select
               value={newCompanyId}
               onChange={(e) => setNewCompanyId(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
             >
               <option value="">Unassigned</option>
               {companies.map((c) => (
@@ -379,7 +485,7 @@ export default function PunchPage() {
           <div className="md:col-span-2 flex justify-end">
             <button
               type="submit"
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+              className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
             >
               + Add Issue
             </button>
@@ -387,19 +493,22 @@ export default function PunchPage() {
         </div>
       </form>
 
-      {/* Filters */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3">
+          <h2 className="text-base font-semibold text-slate-900">Filter Issues</h2>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-4">
           <div>
             <label className="text-xs font-semibold text-slate-600">Status</label>
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
             >
               <option value="ALL">ALL</option>
               <option value="OPEN">OPEN</option>
-              <option value="IN_PROGRESS">IN_PROGRESS</option>
+              <option value="IN_PROGRESS">IN PROGRESS</option>
               <option value="DONE">DONE</option>
               <option value="VERIFIED">VERIFIED</option>
               <option value="CLOSED">CLOSED</option>
@@ -411,8 +520,8 @@ export default function PunchPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search title, trade, location…"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              placeholder="Search title, trade, location..."
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
             />
           </div>
 
@@ -421,7 +530,7 @@ export default function PunchPage() {
             <select
               value={trade}
               onChange={(e) => setTrade(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
             >
               <option value="">All Trades</option>
               {tradeOptions.map((t) => (
@@ -434,7 +543,6 @@ export default function PunchPage() {
         </div>
       </div>
 
-      {/* List */}
       <div className="space-y-3">
         {filtered.map((it) => {
           const s = statusUpper(it.status);
@@ -442,83 +550,110 @@ export default function PunchPage() {
           const latestPhotoUrl = it.latest_photo_path ? fileUrl(it.latest_photo_path) : "";
 
           return (
-            <div key={it.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-slate-900">{it.title}</div>
+            <div
+              key={it.id}
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-slate-900">{it.title}</h3>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(
+                          s
+                        )}`}
+                      >
+                        {prettyStatus(s)}
+                      </span>
+                    </div>
 
-                  <div className="mt-1 text-xs text-slate-600">
-                    {it.trade ? (
-                      <>
-                        Trade: <b>{it.trade}</b>
-                      </>
-                    ) : null}
-                    {it.location ? (
-                      <>
-                        {" • "}Location: <b>{it.location}</b>
-                      </>
-                    ) : null}
-                    {it.status ? (
-                      <>
-                        {" • "}Status: <b>{s}</b>
-                      </>
-                    ) : null}
-                    {" • "}Photos: <b>{photoCount}</b>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-600">
+                      <span>
+                        Trade: <span className="font-medium text-slate-900">{it.trade || "—"}</span>
+                      </span>
+                      <span>
+                        Location:{" "}
+                        <span className="font-medium text-slate-900">{it.location || "—"}</span>
+                      </span>
+                      <span>
+                        Photos: <span className="font-medium text-slate-900">{photoCount}</span>
+                      </span>
+                      {it.assigned_company_name ? (
+                        <span>
+                          Assigned:{" "}
+                          <span className="font-medium text-slate-900">
+                            {it.assigned_company_name}
+                          </span>
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
 
-                  {/* Latest photo thumbnail */}
-                  {latestPhotoUrl ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {iAmGC ? (
+                    <div className="flex shrink-0">
                       <button
+                        onClick={() => deleteIssue(it.id)}
+                        className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 hover:bg-red-100"
                         type="button"
-                        onClick={() => window.open(latestPhotoUrl, "_blank", "noopener,noreferrer")}
-                        className="overflow-hidden rounded-xl border border-slate-200 hover:opacity-90"
-                        title="Open latest photo"
                       >
-                        <img
-                          src={latestPhotoUrl}
-                          alt="Latest issue photo"
-                          className="h-20 w-20 object-cover"
-                        />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => openPhotoViewer(it.id, it.title)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      >
-                        View Photos
-                      </button>
-                    </div>
-                  ) : photoCount > 0 ? (
-                    <div className="mt-3">
-                      <button
-                        type="button"
-                        onClick={() => openPhotoViewer(it.id, it.title)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      >
-                        View Photos
+                        Delete
                       </button>
                     </div>
                   ) : null}
-
-                  {/* Photo upload */}
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50">
-                      <span>{uploading[it.id] ? "Uploading…" : "Add Photo"}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={!!uploading[it.id]}
-                        onChange={(e) => uploadPhoto(it.id, e.target.files?.[0])}
-                      />
-                    </label>
-                  </div>
                 </div>
 
-                {/* Actions */}
-                <div className="flex flex-wrap gap-2">
+                {latestPhotoUrl ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.open(latestPhotoUrl, "_blank", "noopener,noreferrer")
+                      }
+                      className="overflow-hidden rounded-xl border border-slate-200 hover:opacity-90"
+                      title="Open latest photo"
+                    >
+                      <img
+                        src={latestPhotoUrl}
+                        alt="Latest issue photo"
+                        className="h-24 w-24 object-cover"
+                      />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => openPhotoViewer(it.id, it.title)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                    >
+                      View Photos
+                    </button>
+                  </div>
+                ) : photoCount > 0 ? (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => openPhotoViewer(it.id, it.title)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                    >
+                      View Photos
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50">
+                    <span>{uploading[it.id] ? "Uploading..." : "Add Photo"}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={!!uploading[it.id]}
+                      onChange={(e) => uploadPhoto(it.id, e.target.files?.[0])}
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                   <button
                     onClick={() => setStatus(it.id, "start")}
                     disabled={!canStart(s)}
@@ -564,16 +699,6 @@ export default function PunchPage() {
                   >
                     Close
                   </button>
-
-                  {iAmGC ? (
-                    <button
-                      onClick={() => deleteIssue(it.id)}
-                      className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 hover:bg-red-100"
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  ) : null}
                 </div>
               </div>
             </div>
@@ -587,7 +712,6 @@ export default function PunchPage() {
         ) : null}
       </div>
 
-      {/* Photo viewer modal */}
       {photoViewerOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-xl">
@@ -615,6 +739,7 @@ export default function PunchPage() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {photoViewerPhotos.map((photo) => {
                     const url = fileUrl(photo.file_path);
+
                     return (
                       <a
                         key={photo.id}
@@ -633,7 +758,9 @@ export default function PunchPage() {
                             {photo.original_name || "Photo"}
                           </div>
                           <div className="mt-1 text-xs text-slate-500">
-                            {photo.created_at ? new Date(photo.created_at).toLocaleString() : ""}
+                            {photo.created_at
+                              ? new Date(photo.created_at).toLocaleString()
+                              : ""}
                           </div>
                         </div>
                       </a>
