@@ -2,7 +2,10 @@
   "name": "gc-suite-web",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 0.0.0.0 -p 3002"
+    "dev": "next dev -H 0.0.0.0 -p 3002",
+    "build": "next build",
+    "start": "next start -p 3002",
+    "vercel-build": "next build"
   },
   "dependencies": {
     "next": "^15.2.9",
