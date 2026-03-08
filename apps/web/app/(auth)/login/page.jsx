@@ -7,14 +7,14 @@ const API = process.env.NEXT_PUBLIC_API_URL;
 
 export default function LoginPage() {
   const router = useRouter();
-  const params = useSearchParams();
-  const next = params.get("next") || "/dashboard";
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") || "/dashboard";
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleLogin(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
     setError("");
@@ -37,12 +37,12 @@ export default function LoginPage() {
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
 
-      router.push(next);
+      router.replace(next);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Login failed");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   return (
@@ -51,10 +51,11 @@ export default function LoginPage() {
         <h1 className="text-2xl font-semibold mb-2">GC Suite</h1>
         <p className="text-slate-300 mb-6">Sign in to continue.</p>
 
-        <form onSubmit={handleLogin} className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-3">
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            name="email"
             type="email"
             placeholder="Email"
             required
@@ -62,17 +63,14 @@ export default function LoginPage() {
           />
 
           <button
+            type="submit"
             disabled={loading}
-            className="w-full py-2 rounded bg-blue-600 hover:bg-blue-500 font-medium"
+            className="w-full py-2 rounded bg-blue-600 hover:bg-blue-500 font-medium disabled:opacity-60"
           >
             {loading ? "Signing in..." : "Login"}
           </button>
 
-          {error && (
-            <div className="text-red-400 text-sm pt-2">
-              {error}
-            </div>
-          )}
+          {error ? <p className="text-sm text-red-400">{error}</p> : null}
         </form>
       </div>
     </main>
