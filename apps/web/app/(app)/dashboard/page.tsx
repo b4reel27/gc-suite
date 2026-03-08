@@ -15,11 +15,13 @@ function getActiveProjectId() {
   return localStorage.getItem("activeProjectId") || "";
 }
 
-function countIssues(items: any[]) {
+function countIssues(items) {
   const openStatuses = new Set(["OPEN", "IN_PROGRESS", "DONE"]);
   const now = Date.now();
 
-  const open = items.filter((i) => openStatuses.has(String(i.status || "").toUpperCase()));
+  const open = items.filter((i) =>
+    openStatuses.has(String(i.status || "").toUpperCase())
+  );
 
   const overdue = open.filter((i) => {
     if (!i.due_date) return false;
@@ -40,11 +42,13 @@ function countIssues(items: any[]) {
   };
 }
 
-function countSchedule(items: any[]) {
+function countSchedule(items) {
   const now = Date.now();
 
   const next7 = items.filter((i) => {
-    const start = new Date(i.start_at || i.start_date || i.start || i.date || "").getTime();
+    const start = new Date(
+      i.start_at || i.start_date || i.start || i.date || ""
+    ).getTime();
     if (!Number.isFinite(start)) return false;
     return start >= now && start <= now + 7 * 24 * 60 * 60 * 1000;
   });
@@ -61,11 +65,11 @@ function countSchedule(items: any[]) {
   };
 }
 
-function countPlans(data: any) {
+function countPlans(data) {
   const sheets = Array.isArray(data?.sheets) ? data.sheets : [];
 
   const totalSheets = sheets.length;
-  const currentSheets = sheets.filter((s: any) => s?.current).length;
+  const currentSheets = sheets.filter((s) => s?.current).length;
 
   return {
     totalSheets,
@@ -73,7 +77,7 @@ function countPlans(data: any) {
   };
 }
 
-async function apiGet(path: string, token: string) {
+async function apiGet(path, token) {
   const res = await fetch(`${API_URL}${path}`, {
     cache: "no-store",
     headers: {
@@ -82,7 +86,7 @@ async function apiGet(path: string, token: string) {
   });
 
   const text = await res.text();
-  let data: any = null;
+  let data = null;
 
   try {
     data = text ? JSON.parse(text) : null;
@@ -97,15 +101,7 @@ async function apiGet(path: string, token: string) {
   };
 }
 
-function StatCard({
-  title,
-  value,
-  subtext,
-}: {
-  title: string;
-  value: string | number;
-  subtext?: string;
-}) {
+function StatCard({ title, value, subtext }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="text-sm text-slate-500">{title}</h2>
@@ -115,14 +111,39 @@ function StatCard({
   );
 }
 
+function TileCard({ href, icon, title, value, subtext, disabled = false }) {
+  const baseClassName =
+    "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition active:scale-[0.99]";
+  const content = (
+    <div className={disabled ? `${baseClassName} opacity-60` : `${baseClassName} hover:bg-slate-50`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-3xl">{icon}</div>
+        <div className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
+          {value}
+        </div>
+      </div>
+      <div className="mt-4">
+        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+        {subtext ? <p className="mt-1 text-sm text-slate-500">{subtext}</p> : null}
+      </div>
+    </div>
+  );
+
+  if (disabled) {
+    return content;
+  }
+
+  return <Link href={href}>{content}</Link>;
+}
+
 export default function DashboardPage() {
   const [tokenReady, setTokenReady] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState("");
-  const [project, setProject] = useState<any>(null);
-  const [projects, setProjects] = useState<any[]>([]);
-  const [issueItems, setIssueItems] = useState<any[]>([]);
-  const [scheduleItems, setScheduleItems] = useState<any[]>([]);
-  const [plansData, setPlansData] = useState<any>({ sheets: [] });
+  const [project, setProject] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [issueItems, setIssueItems] = useState([]);
+  const [scheduleItems, setScheduleItems] = useState([]);
+  const [plansData, setPlansData] = useState({ sheets: [] });
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -156,7 +177,7 @@ export default function DashboardPage() {
         setProjects(loadedProjects);
 
         const activeProject =
-          loadedProjects.find((p: any) => p.id === storedProjectId) || null;
+          loadedProjects.find((p) => p.id === storedProjectId) || null;
         setProject(activeProject);
 
         if (storedProjectId) {
@@ -180,17 +201,24 @@ export default function DashboardPage() {
 
           if (issuesRes.ok && Array.isArray(issuesRes.data)) {
             setIssueItems(issuesRes.data);
+          } else {
+            setIssueItems([]);
           }
 
           if (scheduleRes.ok && Array.isArray(scheduleRes.data)) {
             setScheduleItems(scheduleRes.data);
+          } else {
+            setScheduleItems([]);
           }
 
           if (plansRes.ok) {
             setPlansData(plansRes.data || { sheets: [] });
+          } else {
+            setPlansData({ sheets: [] });
           }
         }
       } catch (err) {
+        console.error(err);
         setError("Failed to load dashboard.");
       }
     }
@@ -205,14 +233,22 @@ export default function DashboardPage() {
   const plansHref = activeProjectId ? `/projects/${activeProjectId}/plans` : "/projects";
   const issuesHref = activeProjectId ? `/projects/${activeProjectId}/punch` : "/projects";
   const scheduleHref = activeProjectId ? `/projects/${activeProjectId}/schedule` : "/projects";
+  const submittalsHref = activeProjectId
+    ? `/projects/${activeProjectId}/submittals`
+    : "/projects";
+  const payAppsHref = activeProjectId
+    ? `/projects/${activeProjectId}/pay-apps`
+    : "/projects";
 
   if (!tokenReady) {
     return <div className="p-6">Loading...</div>;
   }
 
+  const hasProject = !!project;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
           {project ? (
@@ -231,7 +267,7 @@ export default function DashboardPage() {
 
         <Link
           href="/projects"
-          className="inline-flex w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+          className="inline-flex w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
         >
           {project ? "Change Project" : "Select Project"}
         </Link>
@@ -242,6 +278,57 @@ export default function DashboardPage() {
           {error}
         </div>
       ) : null}
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
+        <TileCard
+          href={plansHref}
+          icon="📐"
+          title="Plans"
+          value={hasProject ? planCounts.currentSheets : "—"}
+          subtext={
+            hasProject
+              ? `${planCounts.totalSheets} total sheet${planCounts.totalSheets === 1 ? "" : "s"}`
+              : "Select project"
+          }
+          disabled={!hasProject}
+        />
+
+        <TileCard
+          href={issuesHref}
+          icon="⚠️"
+          title="Field Issues"
+          value={hasProject ? issueCounts.open : "—"}
+          subtext="Open items"
+          disabled={!hasProject}
+        />
+
+        <TileCard
+          href={scheduleHref}
+          icon="📅"
+          title="Schedule"
+          value={hasProject ? scheduleCounts.next7 : "—"}
+          subtext="Next 7 days"
+          disabled={!hasProject}
+        />
+
+        <TileCard
+          href={submittalsHref}
+          icon="📦"
+          title="Submittals"
+          value="—"
+          subtext="Coming soon"
+          disabled={!hasProject}
+        />
+
+        <TileCard
+          href={payAppsHref}
+          icon="💰"
+          title="Pay Apps"
+          value="—"
+          subtext="Coming soon"
+          disabled={!hasProject}
+        />
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <Link
@@ -269,34 +356,34 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <StatCard
           title="Open Issues"
-          value={project ? issueCounts.open : "—"}
+          value={hasProject ? issueCounts.open : "—"}
           subtext="Open + in progress + done awaiting verify"
         />
         <StatCard
           title="Overdue Issues"
-          value={project ? issueCounts.overdue : "—"}
+          value={hasProject ? issueCounts.overdue : "—"}
           subtext="Past due date"
         />
         <StatCard
           title="Issues Due 7 Days"
-          value={project ? issueCounts.due7 : "—"}
+          value={hasProject ? issueCounts.due7 : "—"}
           subtext="Coming up this week"
         />
         <StatCard
           title="Schedule Open"
-          value={project ? scheduleCounts.open : "—"}
+          value={hasProject ? scheduleCounts.open : "—"}
           subtext="Open schedule items"
         />
         <StatCard
           title="Schedule Next 7 Days"
-          value={project ? scheduleCounts.next7 : "—"}
+          value={hasProject ? scheduleCounts.next7 : "—"}
           subtext="Upcoming work"
         />
         <StatCard
           title="Current Plans"
-          value={project ? planCounts.currentSheets : "—"}
+          value={hasProject ? planCounts.currentSheets : "—"}
           subtext={
-            project
+            hasProject
               ? `${planCounts.totalSheets} total sheet${planCounts.totalSheets === 1 ? "" : "s"}`
               : "No active project"
           }
