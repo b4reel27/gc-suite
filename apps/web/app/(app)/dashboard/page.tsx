@@ -16,10 +16,10 @@ function getActiveProjectId() {
 }
 
 function countIssues(items: any[]) {
-  const now = Date.now();
   const openStatuses = new Set(["OPEN", "IN_PROGRESS", "DONE"]);
+  const now = Date.now();
 
-  const open = items.filter((i) => openStatuses.has(i.status));
+  const open = items.filter((i) => openStatuses.has(String(i.status || "").toUpperCase()));
 
   const overdue = open.filter((i) => {
     if (!i.due_date) return false;
@@ -33,7 +33,11 @@ function countIssues(items: any[]) {
     return Number.isFinite(d) && d >= now && d <= now + 7 * 24 * 60 * 60 * 1000;
   });
 
-  return { open: open.length, overdue: overdue.length, due7: due7.length };
+  return {
+    open: open.length,
+    overdue: overdue.length,
+    due7: due7.length,
+  };
 }
 
 function countSchedule(items: any[]) {
@@ -45,13 +49,36 @@ function countSchedule(items: any[]) {
     return start >= now && start <= now + 7 * 24 * 60 * 60 * 1000;
   });
 
-  return { next7: next7.length };
+  const open = items.filter((i) => {
+    const status = String(i.status || "").toUpperCase();
+    return status === "OPEN" || status === "DONE";
+  });
+
+  return {
+    total: items.length,
+    open: open.length,
+    next7: next7.length,
+  };
+}
+
+function countPlans(data: any) {
+  const sheets = Array.isArray(data?.sheets) ? data.sheets : [];
+
+  const totalSheets = sheets.length;
+  const currentSheets = sheets.filter((s: any) => s?.current).length;
+
+  return {
+    totalSheets,
+    currentSheets,
+  };
 }
 
 async function apiGet(path: string, token: string) {
   const res = await fetch(`${API_URL}${path}`, {
     cache: "no-store",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   const text = await res.text();
@@ -70,102 +97,151 @@ async function apiGet(path: string, token: string) {
   };
 }
 
+function StatCard({
+  title,
+  value,
+  subtext,
+}: {
+  title: string;
+  value: string | number;
+  subtext?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 className="text-sm text-slate-500">{title}</h2>
+      <p className="mt-2 text-3xl font-semibold text-slate-900">{value}</p>
+      {subtext ? <p className="mt-2 text-xs text-slate-500">{subtext}</p> : null}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
-  const [token, setToken] = useState("");
+  const [tokenReady, setTokenReady] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState("");
-  const [projects, setProjects] = useState<any[]>([]);
   const [project, setProject] = useState<any>(null);
+  const [projects, setProjects] = useState<any[]>([]);
   const [issueItems, setIssueItems] = useState<any[]>([]);
   const [scheduleItems, setScheduleItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [debug, setDebug] = useState("");
+  const [plansData, setPlansData] = useState<any>({ sheets: [] });
+  const [error, setError] = useState("");
 
   useEffect(() => {
     async function load() {
-      const storedToken = getToken();
+      const token = getToken();
       const storedProjectId = getActiveProjectId();
 
-      setToken(storedToken);
+      if (!token) {
+        window.location.href = "/login";
+        return;
+      }
+
+      setTokenReady(true);
       setActiveProjectId(storedProjectId);
 
-      if (!storedToken) {
-        setDebug("No token found in localStorage.");
-        setLoading(false);
-        return;
-      }
+      try {
+        const projectsRes = await apiGet("/projects", token);
 
-      const projectsRes = await apiGet("/projects", storedToken);
-
-      if (!projectsRes.ok) {
-        setDebug(
-          `Projects request failed. Status: ${projectsRes.status}. Response: ${JSON.stringify(
-            projectsRes.data
-          )}`
-        );
-        setLoading(false);
-        return;
-      }
-
-      const loadedProjects = Array.isArray(projectsRes.data) ? projectsRes.data : [];
-      setProjects(loadedProjects);
-
-      const activeProject =
-        loadedProjects.find((p: any) => p.id === storedProjectId) || null;
-
-      setProject(activeProject);
-
-      if (storedProjectId) {
-        const [issuesRes, scheduleRes] = await Promise.all([
-          apiGet(`/projects/${storedProjectId}/punch`, storedToken),
-          apiGet(`/schedule/${storedProjectId}`, storedToken),
-        ]);
-
-        if (issuesRes.ok && Array.isArray(issuesRes.data)) {
-          setIssueItems(issuesRes.data);
+        if (!projectsRes.ok) {
+          if (projectsRes.status === 401) {
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+            localStorage.removeItem("activeProjectId");
+            window.location.href = "/login";
+            return;
+          }
+          throw new Error("Failed to load projects");
         }
 
-        if (scheduleRes.ok && Array.isArray(scheduleRes.data)) {
-          setScheduleItems(scheduleRes.data);
-        }
+        const loadedProjects = Array.isArray(projectsRes.data) ? projectsRes.data : [];
+        setProjects(loadedProjects);
 
-        if (!issuesRes.ok || !scheduleRes.ok) {
-          setDebug(
-            `Secondary load issue. Punch: ${issuesRes.status}, Schedule: ${scheduleRes.status}`
-          );
+        const activeProject =
+          loadedProjects.find((p: any) => p.id === storedProjectId) || null;
+        setProject(activeProject);
+
+        if (storedProjectId) {
+          const [issuesRes, scheduleRes, plansRes] = await Promise.all([
+            apiGet(`/projects/${storedProjectId}/punch`, token).catch(() => ({
+              ok: false,
+              status: 500,
+              data: [],
+            })),
+            apiGet(`/schedule/${storedProjectId}`, token).catch(() => ({
+              ok: false,
+              status: 500,
+              data: [],
+            })),
+            apiGet(`/projects/${storedProjectId}/plans`, token).catch(() => ({
+              ok: false,
+              status: 500,
+              data: { sheets: [] },
+            })),
+          ]);
+
+          if (issuesRes.ok && Array.isArray(issuesRes.data)) {
+            setIssueItems(issuesRes.data);
+          }
+
+          if (scheduleRes.ok && Array.isArray(scheduleRes.data)) {
+            setScheduleItems(scheduleRes.data);
+          }
+
+          if (plansRes.ok) {
+            setPlansData(plansRes.data || { sheets: [] });
+          }
         }
+      } catch (err) {
+        setError("Failed to load dashboard.");
       }
-
-      setLoading(false);
     }
 
     load();
   }, []);
 
   const issueCounts = useMemo(() => countIssues(issueItems), [issueItems]);
-  const schedCounts = useMemo(() => countSchedule(scheduleItems), [scheduleItems]);
+  const scheduleCounts = useMemo(() => countSchedule(scheduleItems), [scheduleItems]);
+  const planCounts = useMemo(() => countPlans(plansData), [plansData]);
 
   const plansHref = activeProjectId ? `/projects/${activeProjectId}/plans` : "/projects";
   const issuesHref = activeProjectId ? `/projects/${activeProjectId}/punch` : "/projects";
   const scheduleHref = activeProjectId ? `/projects/${activeProjectId}/schedule` : "/projects";
 
-  if (loading) {
-    return <div className="p-6">Loading dashboard...</div>;
+  if (!tokenReady) {
+    return <div className="p-6">Loading...</div>;
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-        <p className="mt-1 text-slate-600">Debugging auth + project load.</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
+          {project ? (
+            <p className="mt-1 text-slate-600">
+              <span className="font-semibold">{project.name}</span>
+              {project.location ? ` — ${project.location}` : ""}
+            </p>
+          ) : (
+            <p className="mt-1 text-slate-600">
+              {projects.length
+                ? "Select an active project to see live counts."
+                : "No projects loaded yet."}
+            </p>
+          )}
+        </div>
+
+        <Link
+          href="/projects"
+          className="inline-flex w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+        >
+          {project ? "Change Project" : "Select Project"}
+        </Link>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
-        <div><strong>API URL:</strong> {API_URL || "missing"}</div>
-        <div><strong>Token present:</strong> {token ? "yes" : "no"}</div>
-        <div><strong>Active Project ID:</strong> {activeProjectId || "none"}</div>
-        <div><strong>Projects Loaded:</strong> {projects.length}</div>
-        {debug ? <div className="mt-2 text-red-600"><strong>Debug:</strong> {debug}</div> : null}
-      </div>
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <Link
@@ -174,12 +250,14 @@ export default function DashboardPage() {
         >
           Plans
         </Link>
+
         <Link
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
           href={issuesHref}
         >
           Field Issues
         </Link>
+
         <Link
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
           href={scheduleHref}
@@ -188,27 +266,52 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm text-slate-500">Open Issues</h2>
-          <p className="mt-2 text-3xl font-semibold">{project ? issueCounts.open : "—"}</p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm text-slate-500">Overdue Issues</h2>
-          <p className="mt-2 text-3xl font-semibold">{project ? issueCounts.overdue : "—"}</p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm text-slate-500">Issues Due 7 Days</h2>
-          <p className="mt-2 text-3xl font-semibold">{project ? issueCounts.due7 : "—"}</p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm text-slate-500">Schedule Next 7 Days</h2>
-          <p className="mt-2 text-3xl font-semibold">{project ? schedCounts.next7 : "—"}</p>
-        </div>
+      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <StatCard
+          title="Open Issues"
+          value={project ? issueCounts.open : "—"}
+          subtext="Open + in progress + done awaiting verify"
+        />
+        <StatCard
+          title="Overdue Issues"
+          value={project ? issueCounts.overdue : "—"}
+          subtext="Past due date"
+        />
+        <StatCard
+          title="Issues Due 7 Days"
+          value={project ? issueCounts.due7 : "—"}
+          subtext="Coming up this week"
+        />
+        <StatCard
+          title="Schedule Open"
+          value={project ? scheduleCounts.open : "—"}
+          subtext="Open schedule items"
+        />
+        <StatCard
+          title="Schedule Next 7 Days"
+          value={project ? scheduleCounts.next7 : "—"}
+          subtext="Upcoming work"
+        />
+        <StatCard
+          title="Current Plans"
+          value={project ? planCounts.currentSheets : "—"}
+          subtext={
+            project
+              ? `${planCounts.totalSheets} total sheet${planCounts.totalSheets === 1 ? "" : "s"}`
+              : "No active project"
+          }
+        />
       </div>
+
+      {!project ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">
+          Go to{" "}
+          <Link className="underline" href="/projects">
+            Projects
+          </Link>{" "}
+          and set one active so your supers see real counts here.
+        </div>
+      ) : null}
     </div>
   );
 }

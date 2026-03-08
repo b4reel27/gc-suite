@@ -157,6 +157,11 @@ function normalizeDateInput(value) {
 // ----------------------
 const pool = new Pool({
   connectionString: DATABASE_URL,
+  ssl: DATABASE_URL
+    ? {
+        rejectUnauthorized: false,
+      }
+    : false,
 });
 
 async function getMembership(projectId, userId) {
