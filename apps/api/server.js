@@ -26,22 +26,52 @@ const DATA_ROOT = path.join(process.cwd(), "data", "projects");
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
 const DATABASE_URL = process.env.DATABASE_URL;
+const ALLOW_DEV_LOGIN = String(process.env.ALLOW_DEV_LOGIN || "").toLowerCase() === "true";
 
 if (!DATABASE_URL) {
   console.warn("⚠️  DATABASE_URL is not set. API may fail on DB routes.");
 }
 
-const CORS_ORIGIN = process.env.CORS_ORIGIN || true;
+function parseCorsOrigins(value) {
+  if (!value || value === true) return true;
+
+  const raw = String(value).trim();
+  if (!raw) return true;
+  if (raw === "*") return true;
+
+  return raw
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+const CORS_ORIGIN = parseCorsOrigins(
+  process.env.CORS_ORIGIN || "https://gc-suite.vercel.app,http://localhost:3002"
+);
 
 // ----------------------
 // Middleware
 // ----------------------
-app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (CORS_ORIGIN === true) return callback(null, true);
+      if (Array.isArray(CORS_ORIGIN) && CORS_ORIGIN.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
+
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
   })
 );
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -173,14 +203,12 @@ async function ensureScheduleTable() {
   await pool.query(`ALTER TABLE public.schedule_items ALTER COLUMN status SET DEFAULT 'OPEN';`);
   await pool.query(`ALTER TABLE public.schedule_items ALTER COLUMN created_at SET DEFAULT now();`);
 
-  // Backfill start_at from legacy date when possible
   await pool.query(`
     UPDATE public.schedule_items
     SET start_at = COALESCE(start_at, date, due_date)
     WHERE start_at IS NULL;
   `);
 
-  // Keep legacy date useful for existing UI
   await pool.query(`
     UPDATE public.schedule_items
     SET date = COALESCE(date, start_at, due_date)
@@ -395,6 +423,7 @@ app.get("/health", (_req, res) =>
     ok: true,
     service: "api",
     time: new Date().toISOString(),
+    allowDevLogin: ALLOW_DEV_LOGIN,
   })
 );
 
@@ -403,7 +432,7 @@ app.get("/health", (_req, res) =>
 // ----------------------
 app.post("/auth/dev-login", async (req, res) => {
   try {
-    if (process.env.NODE_ENV === "production") {
+    if (process.env.NODE_ENV === "production" && !ALLOW_DEV_LOGIN) {
       return res.status(403).json({ error: "Dev login disabled in production" });
     }
 
@@ -414,6 +443,7 @@ app.post("/auth/dev-login", async (req, res) => {
       `SELECT id, email, name FROM users WHERE lower(email)=lower($1)`,
       [email]
     );
+
     const user = rows[0];
     if (!user) return res.status(404).json({ error: "User not found" });
 
@@ -602,7 +632,6 @@ app.get("/schedule/:projectId", requireAuth, listScheduleForProject);
 app.post("/projects/:projectId/schedule", requireAuth, createScheduleForProject);
 app.post("/schedule/:projectId", requireAuth, createScheduleForProject);
 
-// DONE (GC only)
 app.post("/schedule-item/:id/done", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -644,7 +673,6 @@ app.post("/schedule-item/:id/done", requireAuth, async (req, res) => {
   }
 });
 
-// VERIFIED (GC only)
 app.post("/schedule-item/:id/verify", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -686,7 +714,6 @@ app.post("/schedule-item/:id/verify", requireAuth, async (req, res) => {
   }
 });
 
-// CANCELED (GC only)
 app.post("/schedule-item/:id/cancel", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -728,7 +755,6 @@ app.post("/schedule-item/:id/cancel", requireAuth, async (req, res) => {
   }
 });
 
-// DELETE (GC only)
 app.delete("/schedule-item/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -1234,7 +1260,7 @@ app.get("/punch/:issueId/photos", requireAuth, async (req, res) => {
 // ----------------------
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err);
-  res.status(500).json({ error: "Server error" });
+  res.status(500).json({ error: err.message || "Server error" });
 });
 
 // ----------------------
@@ -1242,6 +1268,8 @@ app.use((err, _req, res, _next) => {
 // ----------------------
 const server = app.listen(PORT, HOST, () => {
   console.log(`API listening on http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`);
+  console.log("CORS origin:", CORS_ORIGIN);
+  console.log("ALLOW_DEV_LOGIN:", ALLOW_DEV_LOGIN);
 });
 
 process.on("SIGINT", async () => {
