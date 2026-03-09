@@ -123,6 +123,13 @@ export default function PunchPage() {
     return `${apiBase}${String(filePath).startsWith("/") ? "" : "/"}${filePath}`;
   }
 
+  function getAssignedCompanyName(issue) {
+    if (issue?.assigned_company_name) return issue.assigned_company_name;
+    if (!issue?.assigned_company_id) return "";
+    const match = companies.find((c) => c.id === issue.assigned_company_id);
+    return match?.name || "";
+  }
+
   async function apiFetch(path, opts = {}) {
     const base = apiBase || getApiBase();
     const token = getToken();
@@ -142,8 +149,21 @@ export default function PunchPage() {
     const ct = res.headers.get("content-type") || "";
 
     if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(txt || `Request failed (${res.status})`);
+      let message = `Request failed (${res.status})`;
+
+      try {
+        if (ct.includes("application/json")) {
+          const data = await res.json();
+          message = data?.error || JSON.stringify(data);
+        } else {
+          const txt = await res.text();
+          if (txt) message = txt;
+        }
+      } catch {
+        // ignore parse errors
+      }
+
+      throw new Error(message);
     }
 
     if (ct.includes("application/json")) return res.json();
@@ -303,7 +323,7 @@ export default function PunchPage() {
     }
   }
 
-  async function uploadPhoto(issueId, file) {
+  async function uploadPhoto(issueId, file, inputEl) {
     if (!file) return;
 
     setError("");
@@ -318,6 +338,7 @@ export default function PunchPage() {
         body: fd,
       });
 
+      if (inputEl) inputEl.value = "";
       await refreshIssues();
     } catch (e) {
       setError(e?.message || "Error uploading photo");
@@ -421,77 +442,83 @@ export default function PunchPage() {
         <StatCard title="Photos" value={stats.photos} />
       </div>
 
-      <form
-        onSubmit={addIssue}
-        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-      >
-        <div className="mb-3">
-          <h2 className="text-base font-semibold text-slate-900">Add Field Issue</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Fast entry for supers and PMs in the field.
-          </p>
+      {iAmGC ? (
+        <form
+          onSubmit={addIssue}
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+        >
+          <div className="mb-3">
+            <h2 className="text-base font-semibold text-slate-900">Add Field Issue</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Fast entry for supers and PMs in the field.
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="text-xs font-semibold text-slate-600">Title</label>
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Example: Caulk around windows at rear elevation"
+                required
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Trade</label>
+              <input
+                value={newTrade}
+                onChange={(e) => setNewTrade(e.target.value)}
+                placeholder="Example: Finish / Glazing / Electrical"
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Location</label>
+              <input
+                value={newLocation}
+                onChange={(e) => setNewLocation(e.target.value)}
+                placeholder="Example: Sales floor, north wall"
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-xs font-semibold text-slate-600">
+                Assigned Company (optional)
+              </label>
+              <select
+                value={newCompanyId}
+                onChange={(e) => setNewCompanyId(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+              >
+                <option value="">Unassigned</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-2 flex justify-end">
+              <button
+                type="submit"
+                className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
+              >
+                + Add Issue
+              </button>
+            </div>
+          </div>
+        </form>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+          Field issues can be updated here, but only GC users can create new issues.
         </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-slate-600">Title</label>
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Example: Caulk around windows at rear elevation"
-              required
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-slate-600">Trade</label>
-            <input
-              value={newTrade}
-              onChange={(e) => setNewTrade(e.target.value)}
-              placeholder="Example: Finish / Glazing / Electrical"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-slate-600">Location</label>
-            <input
-              value={newLocation}
-              onChange={(e) => setNewLocation(e.target.value)}
-              placeholder="Example: Sales floor, north wall"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-slate-600">
-              Assigned Company (optional)
-            </label>
-            <select
-              value={newCompanyId}
-              onChange={(e) => setNewCompanyId(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-            >
-              <option value="">Unassigned</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="md:col-span-2 flex justify-end">
-            <button
-              type="submit"
-              className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
-            >
-              + Add Issue
-            </button>
-          </div>
-        </div>
-      </form>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3">
@@ -548,6 +575,7 @@ export default function PunchPage() {
           const s = statusUpper(it.status);
           const photoCount = Number(it.photo_count || 0);
           const latestPhotoUrl = it.latest_photo_path ? fileUrl(it.latest_photo_path) : "";
+          const assignedCompanyName = getAssignedCompanyName(it);
 
           return (
             <div
@@ -579,11 +607,11 @@ export default function PunchPage() {
                       <span>
                         Photos: <span className="font-medium text-slate-900">{photoCount}</span>
                       </span>
-                      {it.assigned_company_name ? (
+                      {assignedCompanyName ? (
                         <span>
                           Assigned:{" "}
                           <span className="font-medium text-slate-900">
-                            {it.assigned_company_name}
+                            {assignedCompanyName}
                           </span>
                         </span>
                       ) : null}
@@ -648,7 +676,9 @@ export default function PunchPage() {
                       accept="image/*"
                       className="hidden"
                       disabled={!!uploading[it.id]}
-                      onChange={(e) => uploadPhoto(it.id, e.target.files?.[0])}
+                      onChange={(e) =>
+                        uploadPhoto(it.id, e.target.files?.[0], e.target)
+                      }
                     />
                   </label>
                 </div>
