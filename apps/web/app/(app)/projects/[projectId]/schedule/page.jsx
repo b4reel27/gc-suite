@@ -34,6 +34,51 @@ function statusUpper(s) {
   return String(s || "").toUpperCase();
 }
 
+function prettyStatus(status) {
+  return statusUpper(status).replaceAll("_", " ");
+}
+
+function statusBadgeClass(status) {
+  const s = statusUpper(status);
+
+  if (s === "OPEN") {
+    return "bg-amber-100 text-amber-800 border-amber-200";
+  }
+  if (s === "DONE") {
+    return "bg-purple-100 text-purple-800 border-purple-200";
+  }
+  if (s === "VERIFIED") {
+    return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  }
+  if (s === "CANCELED") {
+    return "bg-slate-200 text-slate-700 border-slate-300";
+  }
+
+  return "bg-slate-100 text-slate-700 border-slate-200";
+}
+
+function StatCard({ title, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {title}
+      </div>
+      <div className="mt-2 text-2xl font-bold text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function fmtDate(value) {
+  if (!value) return "";
+  try {
+    const d = new Date(value);
+    if (!Number.isFinite(d.getTime())) return String(value).slice(0, 10);
+    return d.toLocaleDateString();
+  } catch {
+    return String(value).slice(0, 10);
+  }
+}
+
 export default function SchedulePage() {
   const { projectId } = useParams();
 
@@ -68,7 +113,9 @@ export default function SchedulePage() {
     const base = apiBase || getApiBase();
     const token = getToken();
 
-    if (!token) throw new Error("Not logged in (token missing). Go to Login and sign in again.");
+    if (!token) {
+      throw new Error("Not logged in (token missing). Go to Login and sign in again.");
+    }
 
     const res = await fetch(`${base}${path}`, {
       ...opts,
@@ -79,9 +126,23 @@ export default function SchedulePage() {
     });
 
     const ct = res.headers.get("content-type") || "";
+
     if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(txt || `Request failed (${res.status})`);
+      let message = `Request failed (${res.status})`;
+
+      try {
+        if (ct.includes("application/json")) {
+          const data = await res.json();
+          message = data?.error || JSON.stringify(data);
+        } else {
+          const txt = await res.text();
+          if (txt) message = txt;
+        }
+      } catch {
+        // ignore parse errors
+      }
+
+      throw new Error(message);
     }
 
     if (ct.includes("application/json")) return res.json();
@@ -140,11 +201,24 @@ export default function SchedulePage() {
       const s = statusUpper(it.status);
       const statusOk = filter === "ALL" ? true : s === filter;
       const qOk = q
-        ? `${it.title || ""} ${it.notes || ""} ${it.date || ""}`.toLowerCase().includes(q)
+        ? `${it.title || ""} ${it.notes || ""} ${it.date || ""} ${it.start_at || ""}`
+            .toLowerCase()
+            .includes(q)
         : true;
       return statusOk && qOk;
     });
   }, [items, filter, query]);
+
+  const stats = useMemo(() => {
+    const list = items || [];
+    return {
+      total: list.length,
+      open: list.filter((it) => statusUpper(it.status) === "OPEN").length,
+      done: list.filter((it) => statusUpper(it.status) === "DONE").length,
+      verified: list.filter((it) => statusUpper(it.status) === "VERIFIED").length,
+      canceled: list.filter((it) => statusUpper(it.status) === "CANCELED").length,
+    };
+  }, [items]);
 
   async function addItem(e) {
     e.preventDefault();
@@ -177,7 +251,10 @@ export default function SchedulePage() {
   async function action(itemId, actionPath) {
     setError("");
     try {
-      const updated = await apiFetch(`/schedule-item/${itemId}/${actionPath}`, { method: "POST" });
+      const updated = await apiFetch(`/schedule-item/${itemId}/${actionPath}`, {
+        method: "POST",
+      });
+
       if (updated?.id) {
         setItems((prev) => (prev || []).map((x) => (x.id === itemId ? updated : x)));
       } else {
@@ -189,6 +266,9 @@ export default function SchedulePage() {
   }
 
   async function deleteItem(itemId) {
+    const ok = window.confirm("Delete this schedule item? This cannot be undone.");
+    if (!ok) return;
+
     setError("");
     try {
       await apiFetch(`/schedule-item/${itemId}`, { method: "DELETE" });
@@ -202,10 +282,12 @@ export default function SchedulePage() {
     const s = statusUpper(status);
     return s === "OPEN";
   }
+
   function canVerify(status) {
     const s = statusUpper(status);
     return s === "DONE";
   }
+
   function canCancel(status) {
     const s = statusUpper(status);
     return s !== "CANCELED";
@@ -228,6 +310,14 @@ export default function SchedulePage() {
             </p>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={refreshSchedule}
+          className="inline-flex w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+        >
+          Refresh
+        </button>
       </div>
 
       {error ? (
@@ -236,53 +326,72 @@ export default function SchedulePage() {
         </div>
       ) : null}
 
-      {/* Create */}
-      <form onSubmit={addItem} className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-slate-600">Task</label>
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Example: Install new door hardware at front entry"
-              required
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <StatCard title="Total" value={stats.total} />
+        <StatCard title="Open" value={stats.open} />
+        <StatCard title="Done" value={stats.done} />
+        <StatCard title="Verified" value={stats.verified} />
+        <StatCard title="Canceled" value={stats.canceled} />
+      </div>
+
+      {iAmGC ? (
+        <form onSubmit={addItem} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-base font-semibold text-slate-900">Add Schedule Item</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Add and manage upcoming field work.
+            </p>
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-slate-600">Date (optional)</label>
-            <input
-              type="date"
-              value={newDate}
-              onChange={(e) => setNewDate(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="text-xs font-semibold text-slate-600">Task</label>
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Example: Install new door hardware at front entry"
+                required
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              />
+            </div>
 
-          <div>
-            <label className="text-xs font-semibold text-slate-600">Notes (optional)</label>
-            <input
-              value={newNotes}
-              onChange={(e) => setNewNotes(e.target.value)}
-              placeholder="Example: Coordinate with locksmith"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-          </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Date (optional)</label>
+              <input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              />
+            </div>
 
-          <div className="md:col-span-2 flex justify-end">
-            <button
-              type="submit"
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-            >
-              + Add Schedule Item
-            </button>
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Notes (optional)</label>
+              <input
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+                placeholder="Example: Coordinate with locksmith"
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="md:col-span-2 flex justify-end">
+              <button
+                type="submit"
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+              >
+                + Add Schedule Item
+              </button>
+            </div>
           </div>
+        </form>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+          Schedule items can be viewed here, but only GC users can create, update, or delete them.
         </div>
-      </form>
+      )}
 
-      {/* Filters */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-3">
           <div>
             <label className="text-xs font-semibold text-slate-600">Status</label>
@@ -304,41 +413,47 @@ export default function SchedulePage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search title, notes, date…"
+              placeholder="Search title, notes, date..."
               className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
             />
           </div>
         </div>
       </div>
 
-      {/* List */}
       <div className="space-y-3">
         {filtered.map((it) => {
           const s = statusUpper(it.status);
-          const dateLabel = it.date ? String(it.date).slice(0, 10) : "";
+          const displayDate = it.start_at || it.date || it.due_date || "";
 
           return (
-            <div key={it.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div key={it.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-slate-900">{it.title}</div>
-                  <div className="mt-1 text-xs text-slate-600">
-                    {dateLabel ? (
-                      <>
-                        Date: <b>{dateLabel}</b>
-                      </>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-semibold text-slate-900">{it.title}</div>
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(
+                        s
+                      )}`}
+                    >
+                      {prettyStatus(s)}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-600">
+                    {displayDate ? (
+                      <span>
+                        Date: <span className="font-medium text-slate-900">{fmtDate(displayDate)}</span>
+                      </span>
                     ) : null}
                     {it.notes ? (
-                      <>
-                        {dateLabel ? " • " : ""}
-                        Notes: <b>{it.notes}</b>
-                      </>
+                      <span>
+                        Notes: <span className="font-medium text-slate-900">{it.notes}</span>
+                      </span>
                     ) : null}
-                    {" • "}Status: <b>{s}</b>
                   </div>
                 </div>
 
-                {/* Actions */}
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => action(it.id, "done")}
