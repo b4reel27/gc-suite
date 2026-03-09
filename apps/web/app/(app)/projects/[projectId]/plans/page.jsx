@@ -14,10 +14,23 @@ function fmtDate(iso) {
   }
 }
 
+function norm(v) {
+  return (v ?? "").toString().trim();
+}
+
+function isGcRole(role) {
+  return String(role || "").toUpperCase().startsWith("GC");
+}
+
 async function getApiUrl() {
   const hdrs = await headers();
   const host = hdrs.get("host")?.split(":")[0];
-  return process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || (host ? `http://${host}:3005` : "http://localhost:3005");
+
+  return (
+    process.env.API_BASE_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    (host ? `http://${host}:3005` : "http://localhost:3005")
+  );
 }
 
 async function apiFetchServer(path, token) {
@@ -30,17 +43,45 @@ async function apiFetchServer(path, token) {
     },
   });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  const ct = res.headers.get("content-type") || "";
+  let data = {};
+
+  try {
+    if (ct.includes("application/json")) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      data = text ? { error: text } : {};
+    }
+  } catch {
+    data = {};
+  }
+
+  if (!res.ok) {
+    throw new Error(data?.error || `Request failed (${res.status})`);
+  }
+
   return data;
 }
 
-function norm(v) {
-  return (v ?? "").toString().trim();
+function getCurrentRevLabel(plan) {
+  if (plan?.currentRev) return plan.currentRev;
+  if (plan?.current?.rev) return plan.current.rev;
+  if (plan?.current_revision) return plan.current_revision;
+  return "";
+}
+
+function getUpdatedLabel(plan) {
+  return (
+    plan?.updatedAt ||
+    plan?.updated_at ||
+    plan?.current?.date ||
+    plan?.current_revision_date ||
+    ""
+  );
 }
 
 export default async function PlansPage({ params, searchParams }) {
-  // Next.js 15+: params/searchParams can be Promises in Server Components
   const { projectId } = await Promise.resolve(params);
   const sp = (await Promise.resolve(searchParams)) || {};
 
@@ -48,66 +89,105 @@ export default async function PlansPage({ params, searchParams }) {
   const discipline = norm(sp?.discipline);
 
   const cookieStore = await cookies();
-  const token = cookieStore.get("gc_auth")?.value || "";
+  const token =
+    cookieStore.get("gc_auth")?.value ||
+    cookieStore.get("gc_token")?.value ||
+    cookieStore.get("token")?.value ||
+    "";
 
-  const disciplines = ["", "ARCH", "STRUCT", "ELEC", "MECH", "CIVIL", "PLUMB", "FIRE", "GEN"];
+  const disciplines = [
+    "",
+    "ARCH",
+    "STRUCT",
+    "ELEC",
+    "MECH",
+    "CIVIL",
+    "PLUMB",
+    "FIRE",
+    "GEN",
+  ];
 
-  // Fetch projects (for header) + plans list (if endpoint exists)
   let project = null;
+  let me = null;
   let plans = [];
   let loadError = "";
 
-  try {
-    const projects = await apiFetchServer(`/projects`, token);
-    project = Array.isArray(projects) ? projects.find((p) => p.id === projectId) : null;
-  } catch (e) {
-    // non-fatal; header can still render
-  }
-
-  // Try a few likely plans endpoints (turnkey / resilient)
-  // If your API only supports one of these, it will work.
-  const planEndpointsToTry = [
-    `/projects/${projectId}/plans`,
-    `/plans/${projectId}`, // some builds use this pattern
-    `/plans/${projectId}/list`,
-  ];
-
-  for (const ep of planEndpointsToTry) {
+  if (token) {
     try {
-      const data = await apiFetchServer(ep, token);
-      if (Array.isArray(data)) {
-        plans = data;
-        break;
+      const projects = await apiFetchServer(`/projects`, token);
+      project = Array.isArray(projects)
+        ? projects.find((p) => p.id === projectId) || null
+        : null;
+    } catch {
+      // non-fatal
+    }
+
+    try {
+      me = await apiFetchServer(`/projects/${projectId}/me`, token);
+    } catch {
+      // non-fatal
+    }
+
+    const planEndpointsToTry = [
+      `/projects/${projectId}/plans`,
+      `/plans/${projectId}`,
+      `/plans/${projectId}/list`,
+    ];
+
+    for (const ep of planEndpointsToTry) {
+      try {
+        const data = await apiFetchServer(ep, token);
+
+        if (Array.isArray(data)) {
+          plans = data;
+          break;
+        }
+
+        if (Array.isArray(data?.plans)) {
+          plans = data.plans;
+          break;
+        }
+
+        if (Array.isArray(data?.sheets)) {
+          plans = data.sheets;
+          break;
+        }
+      } catch (e) {
+        loadError = e?.message || "";
       }
-      if (Array.isArray(data?.plans)) {
-        plans = data.plans;
-        break;
-      }
-    } catch (e) {
-      // keep trying
     }
   }
 
-  // Apply filters server-side (safe even if API doesn’t support filtering)
   const filtered = (plans || []).filter((p) => {
-    const dOk = !discipline || norm(p.discipline).toUpperCase() === discipline.toUpperCase();
+    const dOk =
+      !discipline ||
+      norm(p.discipline).toUpperCase() === discipline.toUpperCase();
+
     if (!dOk) return false;
 
     if (!q) return true;
-    const hay = `${norm(p.sheetNo)} ${norm(p.sheetId)} ${norm(p.title)} ${norm(p.discipline)}`.toLowerCase();
+
+    const hay =
+      `${norm(p.sheetNo)} ${norm(p.sheetId)} ${norm(p.title)} ${norm(
+        p.discipline
+      )}`.toLowerCase();
+
     return hay.includes(q.toLowerCase());
   });
 
-  // Sort by sheetNo if possible
   filtered.sort((a, b) => {
-    const A = norm(a.sheetNo);
-    const B = norm(b.sheetNo);
-    return A.localeCompare(B, undefined, { numeric: true, sensitivity: "base" });
+    const A = norm(a.sheetNo || a.sheetId);
+    const B = norm(b.sheetNo || b.sheetId);
+    return A.localeCompare(B, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
   });
+
+  const iAmGC = isGcRole(me?.role);
 
   return (
     <div className="space-y-4">
-      {/* ✅ Pro header */}
       <ProjectHeader
         projectName={project?.name || "Project"}
         location={project?.location || ""}
@@ -119,8 +199,11 @@ export default async function PlansPage({ params, searchParams }) {
           <p className="mt-1 text-sm text-slate-600">
             {project?.name ? (
               <>
-                Project: <span className="font-semibold text-slate-900">{project.name}</span>
-                {project.location ? <span className="text-slate-500"> — {project.location}</span> : null}
+                Project:{" "}
+                <span className="font-semibold text-slate-900">{project.name}</span>
+                {project.location ? (
+                  <span className="text-slate-500"> — {project.location}</span>
+                ) : null}
               </>
             ) : (
               <>
@@ -128,6 +211,12 @@ export default async function PlansPage({ params, searchParams }) {
               </>
             )}
           </p>
+
+          {me?.role ? (
+            <p className="mt-1 text-sm text-slate-600">
+              Role: <span className="font-semibold text-slate-900">{me.role}</span>
+            </p>
+          ) : null}
         </div>
 
         <div className="flex gap-2">
@@ -138,16 +227,29 @@ export default async function PlansPage({ params, searchParams }) {
             Refresh
           </Link>
 
-          <Link
-            href={`/projects/${projectId}/plans/new`}
-            className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:opacity-90"
-          >
-            + Add Sheet
-          </Link>
+          {iAmGC ? (
+            <Link
+              href={`/projects/${projectId}/plans/new`}
+              className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:opacity-90"
+            >
+              + Add Sheet
+            </Link>
+          ) : null}
         </div>
       </div>
 
-      {/* Search / Filter */}
+      {!iAmGC && token ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-600">
+          Plans can be viewed here, but only GC users can add or manage plan sheets.
+        </div>
+      ) : null}
+
+      {loadError && token ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          {loadError}
+        </div>
+      ) : null}
+
       <form
         className="flex flex-col gap-2 sm:flex-row sm:items-center"
         action={`/projects/${projectId}/plans`}
@@ -156,7 +258,7 @@ export default async function PlansPage({ params, searchParams }) {
         <input
           name="q"
           defaultValue={q}
-          placeholder="Search sheet no, id, or title…"
+          placeholder="Search sheet no, id, or title..."
           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
         />
         <select
@@ -178,7 +280,6 @@ export default async function PlansPage({ params, searchParams }) {
         </button>
       </form>
 
-      {/* Plans List */}
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="grid grid-cols-12 gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600">
           <div className="col-span-2">Sheet</div>
@@ -189,7 +290,11 @@ export default async function PlansPage({ params, searchParams }) {
 
         {!token ? (
           <div className="px-4 py-4 text-sm text-slate-600">
-            Not logged in. Go to <Link className="underline" href="/login">Login</Link> and try again.
+            Not logged in. Go to{" "}
+            <Link className="underline" href="/login">
+              Login
+            </Link>{" "}
+            and try again.
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-4 text-sm text-slate-600">
@@ -200,47 +305,68 @@ export default async function PlansPage({ params, searchParams }) {
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {filtered.map((p) => (
-              <div key={p.sheetId || p.id || `${p.sheetNo}-${p.title}`} className="grid grid-cols-12 gap-2 px-4 py-3 text-sm">
-                <div className="col-span-2 font-semibold text-slate-900">
-                  {p.sheetNo || p.sheetId || "—"}
-                  {p.currentRev ? (
-                    <div className="mt-1 text-xs text-slate-500">Rev: {p.currentRev}</div>
-                  ) : null}
-                </div>
+            {filtered.map((p) => {
+              const sheetKey = p.sheetId || p.id || `${p.sheetNo}-${p.title}`;
+              const sheetHref = encodeURIComponent(p.sheetId || p.sheetNo || "");
+              const revLabel = getCurrentRevLabel(p);
+              const updatedLabel = getUpdatedLabel(p);
 
-                <div className="col-span-5 text-slate-700">
-                  {p.title || "—"}
-                  {p.updatedAt ? (
-                    <div className="mt-1 text-xs text-slate-500">Updated: {fmtDate(p.updatedAt)}</div>
-                  ) : null}
-                </div>
+              return (
+                <div
+                  key={sheetKey}
+                  className="grid grid-cols-12 gap-2 px-4 py-3 text-sm"
+                >
+                  <div className="col-span-2 font-semibold text-slate-900">
+                    {p.sheetNo || p.sheetId || "—"}
+                    {revLabel ? (
+                      <div className="mt-1 text-xs text-slate-500">Rev: {revLabel}</div>
+                    ) : null}
+                  </div>
 
-                <div className="col-span-2">
-                  <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200">
-                    {p.discipline || "—"}
-                  </span>
-                </div>
+                  <div className="col-span-5 text-slate-700">
+                    {p.title || "—"}
+                    {updatedLabel ? (
+                      <div className="mt-1 text-xs text-slate-500">
+                        Updated: {fmtDate(updatedLabel)}
+                      </div>
+                    ) : null}
+                  </div>
 
-                <div className="col-span-3">
-                  <Link
-                    href={`/projects/${projectId}/plans/${encodeURIComponent(p.sheetId || p.sheetNo)}`}
-                    className="inline-flex rounded-xl bg-slate-900 px-3 py-2 text-sm text-white hover:opacity-90"
-                  >
-                    Open
-                  </Link>
+                  <div className="col-span-2">
+                    <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200">
+                      {p.discipline || "—"}
+                    </span>
+                  </div>
+
+                  <div className="col-span-3 flex flex-wrap gap-2">
+                    <Link
+                      href={`/projects/${projectId}/plans/${sheetHref}`}
+                      className="inline-flex rounded-xl bg-slate-900 px-3 py-2 text-sm text-white hover:opacity-90"
+                    >
+                      Open
+                    </Link>
+
+                    {iAmGC ? (
+                      <Link
+                        href={`/projects/${projectId}/plans/${sheetHref}`}
+                        className="inline-flex rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        Manage
+                      </Link>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Small helper note (only if API had no plans) */}
       {!plans?.length && token ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
-          If your API doesn’t expose a plans list endpoint yet, that’s OK — the viewer still works once you have a sheetId.
-          We can add a clean <b>GET /projects/:projectId/plans</b> endpoint to make this list fully live.
+          If your API doesn’t expose a plans list endpoint yet, that’s OK — the viewer still works
+          once you have a sheetId. We can add a clean <b>GET /projects/:projectId/plans</b> endpoint
+          to make this list fully live.
         </div>
       ) : null}
     </div>
