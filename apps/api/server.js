@@ -12,27 +12,22 @@ dotenv.config();
 
 const app = express();
 
-/* ---------------- CONFIG ---------------- */
+/* CONFIG */
 
 const PORT = Number(process.env.PORT || 3005);
 const HOST = process.env.HOST || "0.0.0.0";
-
-const UPLOADS_ROOT = path.join(process.cwd(), "uploads");
-const PLANS_UPLOAD_ROOT = path.join(UPLOADS_ROOT, "plans");
-const DATA_ROOT = path.join(process.cwd(), "data", "projects");
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
 
 if (!JWT_SECRET) {
-  console.error("❌ JWT_SECRET must be set");
+  console.error("JWT_SECRET must be set");
   process.exit(1);
 }
 
-const ALLOW_DEV_LOGIN =
-  String(process.env.ALLOW_DEV_LOGIN || "").toLowerCase() === "true";
+const UPLOAD_ROOT = path.join(process.cwd(), "uploads");
 
-/* ---------------- DB ---------------- */
+/* DB */
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -40,43 +35,26 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
   ssl: DATABASE_URL
-    ? {
-        rejectUnauthorized: false,
-      }
+    ? { rejectUnauthorized: false }
     : false,
 });
 
-/* ---------------- MIDDLEWARE ---------------- */
+/* MIDDLEWARE */
 
 app.use(cors());
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  })
-);
+app.use(helmet());
+app.use(express.json());
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use("/uploads", express.static(UPLOAD_ROOT));
 
-/* ---------------- HELPERS ---------------- */
+/* HELPERS */
 
-async function ensureDir(dir) {
-  await fs.mkdir(dir, { recursive: true });
-}
-
-function safeFilename(name, fallback = "file.bin") {
-  const raw = String(name || fallback);
-  return raw.replace(/[^\w.\-]+/g, "_");
-}
-
-function apiError(res, status, message) {
-  return res.status(status).json({ error: message });
+function apiError(res, code, msg) {
+  return res.status(code).json({ error: msg });
 }
 
 function signSessionToken(userId) {
-  return jwt.sign({ userId, purpose: "session" }, JWT_SECRET, {
-    expiresIn: "7d",
-  });
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
 }
 
 function requireAuth(req, res, next) {
@@ -94,37 +72,12 @@ function requireAuth(req, res, next) {
   }
 }
 
-/* ---------------- ACTIVITY SYSTEM ---------------- */
-
-async function ensureActivityTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS project_activity (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      project_id uuid NOT NULL,
-      user_name text,
-      action text,
-      item_type text,
-      item_title text,
-      created_at timestamptz DEFAULT now()
-    )
-  `);
-
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS project_activity_project_idx
-    ON project_activity(project_id, created_at DESC)
-  `);
-}
-
-ensureActivityTable().catch((e) =>
-  console.error("Activity table init error:", e)
-);
-
 async function logActivity(projectId, userName, action, type, title) {
   try {
     await pool.query(
       `INSERT INTO project_activity
-       (project_id, user_name, action, item_type, item_title)
-       VALUES ($1,$2,$3,$4,$5)`,
+      (project_id,user_name,action,item_type,item_title)
+      VALUES ($1,$2,$3,$4,$5)`,
       [projectId, userName, action, type, title]
     );
   } catch (e) {
@@ -132,95 +85,103 @@ async function logActivity(projectId, userName, action, type, title) {
   }
 }
 
-/* ---------------- FILE SYSTEM ---------------- */
+/* STARTUP */
 
 (async () => {
-  await ensureDir(UPLOADS_ROOT);
-  await ensureDir(PLANS_UPLOAD_ROOT);
-  await ensureDir(DATA_ROOT);
+  await fs.mkdir(UPLOAD_ROOT, { recursive: true });
+
+  await pool.query(`
+  CREATE TABLE IF NOT EXISTS project_activity(
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id uuid,
+    user_name text,
+    action text,
+    item_type text,
+    item_title text,
+    created_at timestamptz DEFAULT now()
+  )`);
 })();
 
-app.use("/uploads", express.static(UPLOADS_ROOT));
+/* HEALTH */
 
-/* ---------------- MULTER ---------------- */
-
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: async (_req, _file, cb) => {
-      await ensureDir(UPLOADS_ROOT);
-      cb(null, UPLOADS_ROOT);
-    },
-    filename: (_req, file, cb) => {
-      const safe = safeFilename(file.originalname);
-      cb(null, `${Date.now()}-${safe}`);
-    },
-  }),
-  limits: { fileSize: 15 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Only images allowed"));
-    }
-    cb(null, true);
-  },
-});
-
-/* ---------------- HEALTH ---------------- */
-
-app.get("/", (_req, res) => {
+app.get("/", (_, res) => {
   res.send("GC Suite API running");
 });
 
-app.get("/health", (_req, res) => {
-  res.json({
-    ok: true,
-    time: new Date().toISOString(),
-  });
+app.get("/health", (_, res) => {
+  res.json({ ok: true, time: new Date().toISOString() });
 });
 
-/* ---------------- AUTH ---------------- */
+/* AUTH */
 
 app.post("/auth/dev-login", async (req, res) => {
-  try {
-    if (process.env.NODE_ENV === "production" && !ALLOW_DEV_LOGIN) {
-      return apiError(res, 403, "Dev login disabled");
-    }
+  const { email } = req.body;
 
-    const { email } = req.body;
-    if (!email) return apiError(res, 400, "email required");
+  const { rows } = await pool.query(
+    "SELECT id,email,name FROM users WHERE lower(email)=lower($1)",
+    [email]
+  );
 
-    const { rows } = await pool.query(
-      "SELECT id,email,name FROM users WHERE lower(email)=lower($1)",
-      [email]
-    );
+  const user = rows[0];
+  if (!user) return apiError(res, 404, "User not found");
 
-    const user = rows[0];
-    if (!user) return apiError(res, 404, "User not found");
+  const token = signSessionToken(user.id);
 
-    const token = signSessionToken(user.id);
-
-    res.json({ token, user });
-  } catch (e) {
-    console.error(e);
-    apiError(res, 500, "Server error");
-  }
+  res.json({ token, user });
 });
 
-/* ---------------- PROJECTS ---------------- */
+/* PROJECTS */
 
 app.get("/projects", requireAuth, async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT p.id,p.name,p.location
+    `SELECT p.id,p.name,p.location,pm.role
      FROM projects p
      JOIN project_members pm ON pm.project_id=p.id
-     WHERE pm.user_id=$1
-     ORDER BY p.name`,
+     WHERE pm.user_id=$1`,
     [req.userId]
   );
 
   res.json(rows);
 });
 
-/* ---------------- ACTIVITY ROUTE ---------------- */
+/* PROJECT MEMBERSHIP */
+
+app.get("/projects/:projectId/me", requireAuth, async (req, res) => {
+  const { projectId } = req.params;
+
+  const { rows } = await pool.query(
+    `SELECT role,company_id
+     FROM project_members
+     WHERE project_id=$1 AND user_id=$2`,
+    [projectId, req.userId]
+  );
+
+  const membership = rows[0];
+
+  if (!membership) {
+    return apiError(res, 403, "Not in project");
+  }
+
+  res.json(membership);
+});
+
+/* PROJECT COMPANIES */
+
+app.get("/projects/:projectId/companies", requireAuth, async (req, res) => {
+  const { projectId } = req.params;
+
+  const { rows } = await pool.query(
+    `SELECT c.id,c.name,c.type
+     FROM companies c
+     JOIN project_members pm ON pm.company_id=c.id
+     WHERE pm.project_id=$1`,
+    [projectId]
+  );
+
+  res.json(rows);
+});
+
+/* ACTIVITY */
 
 app.get("/projects/:projectId/activity", requireAuth, async (req, res) => {
   const { projectId } = req.params;
@@ -237,132 +198,128 @@ app.get("/projects/:projectId/activity", requireAuth, async (req, res) => {
   res.json(rows);
 });
 
-/* ---------------- SCHEDULE ---------------- */
+/* PUNCH / FIELD ISSUES */
 
-app.post("/projects/:projectId/schedule", requireAuth, async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const { title } = req.body;
+app.get("/projects/:projectId/punch", requireAuth, async (req, res) => {
+  const { projectId } = req.params;
 
-    const { rows } = await pool.query(
-      `INSERT INTO schedule_items
-       (project_id,title,status)
-       VALUES ($1,$2,'OPEN')
-       RETURNING *`,
-      [projectId, title]
-    );
+  const { rows } = await pool.query(
+    `SELECT *
+     FROM issues
+     WHERE project_id=$1
+     ORDER BY created_at DESC`,
+    [projectId]
+  );
 
-    const item = rows[0];
-
-    await logActivity(projectId, "User", "created", "Schedule Item", title);
-
-    res.json(item);
-  } catch (e) {
-    console.error(e);
-    apiError(res, 500, "Schedule create failed");
-  }
+  res.json(rows);
 });
-
-/* ---------------- PUNCH / ISSUES ---------------- */
 
 app.post("/projects/:projectId/punch", requireAuth, async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const { title } = req.body;
+  const { projectId } = req.params;
+  const { title, trade, location, assigned_company_id } = req.body;
 
-    const { rows } = await pool.query(
-      `INSERT INTO issues
-       (project_id,title,status)
-       VALUES ($1,$2,'OPEN')
-       RETURNING *`,
-      [projectId, title]
-    );
+  const { rows } = await pool.query(
+    `INSERT INTO issues
+     (project_id,title,trade,location,assigned_company_id,status)
+     VALUES ($1,$2,$3,$4,$5,'OPEN')
+     RETURNING *`,
+    [projectId, title, trade, location, assigned_company_id]
+  );
 
-    const issue = rows[0];
+  const issue = rows[0];
 
-    await logActivity(projectId, "User", "created", "Issue", issue.title);
+  await logActivity(projectId, "User", "created", "Issue", issue.title);
 
-    res.json(issue);
-  } catch (e) {
-    console.error(e);
-    apiError(res, 500, "Issue create failed");
-  }
+  res.json(issue);
 });
 
-/* ---------------- PLAN UPLOAD ---------------- */
+app.delete("/punch/:issueId", requireAuth, async (req, res) => {
+  const { issueId } = req.params;
 
-const planUpload = multer({
-  storage: multer.diskStorage({
-    destination: async (req, _file, cb) => {
-      const dir = path.join(PLANS_UPLOAD_ROOT, req.params.projectId);
-      await ensureDir(dir);
-      cb(null, dir);
-    },
-    filename: (_req, file, cb) => {
-      const safe = safeFilename(file.originalname);
-      cb(null, `${Date.now()}-${safe}`);
-    },
-  }),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  await pool.query("DELETE FROM issues WHERE id=$1", [issueId]);
+
+  res.json({ ok: true });
 });
 
-app.post(
-  "/projects/:projectId/plans/upload",
-  requireAuth,
-  planUpload.single("pdf"),
-  async (req, res) => {
-    try {
-      const { projectId } = req.params;
+/* PHOTO UPLOAD */
 
-      if (!req.file) return apiError(res, 400, "Missing file");
+const upload = multer({
+  dest: UPLOAD_ROOT,
+  limits: { fileSize: 15 * 1024 * 1024 },
+});
 
-      const fileUrl = `/uploads/plans/${projectId}/${req.file.filename}`;
+app.post("/punch/:issueId/photo", requireAuth, upload.single("photo"), async (req, res) => {
+  const { issueId } = req.params;
 
-      await logActivity(
-        projectId,
-        "User",
-        "uploaded",
-        "Plan",
-        req.file.originalname
-      );
+  const filePath = `/uploads/${req.file.filename}`;
 
-      res.json({ ok: true, url: fileUrl });
-    } catch (e) {
-      console.error(e);
-      apiError(res, 500, "Upload failed");
-    }
-  }
-);
+  const { rows } = await pool.query(
+    `INSERT INTO punch_photos
+     (punch_id,file_path,original_name)
+     VALUES ($1,$2,$3)
+     RETURNING *`,
+    [issueId, filePath, req.file.originalname]
+  );
 
-/* ---------------- ERROR HANDLER ---------------- */
+  res.json(rows[0]);
+});
 
-app.use((err, _req, res, _next) => {
+app.get("/punch/:issueId/photos", requireAuth, async (req, res) => {
+  const { issueId } = req.params;
+
+  const { rows } = await pool.query(
+    `SELECT *
+     FROM punch_photos
+     WHERE punch_id=$1
+     ORDER BY created_at DESC`,
+    [issueId]
+  );
+
+  res.json(rows);
+});
+
+/* SCHEDULE */
+
+app.post("/projects/:projectId/schedule", requireAuth, async (req, res) => {
+  const { projectId } = req.params;
+  const { title } = req.body;
+
+  const { rows } = await pool.query(
+    `INSERT INTO schedule_items
+     (project_id,title,status)
+     VALUES ($1,$2,'OPEN')
+     RETURNING *`,
+    [projectId, title]
+  );
+
+  await logActivity(projectId, "User", "created", "Schedule", title);
+
+  res.json(rows[0]);
+});
+
+/* ERROR HANDLER */
+
+app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({ error: err.message || "Server error" });
 });
 
-/* ---------------- SERVER ---------------- */
+/* SERVER */
 
 const server = app.listen(PORT, HOST, () => {
-  console.log(`🚀 GC Suite API running on port ${PORT}`);
+  console.log(`GC Suite API running on port ${PORT}`);
 });
 
-async function shutdown(signal) {
-  console.log(`\n${signal} received`);
+/* SHUTDOWN */
 
-  server.close(() => {
-    console.log("HTTP server closed");
-  });
+async function shutdown() {
+  console.log("Shutting down...");
 
-  try {
-    await pool.end();
-    console.log("DB pool closed");
-  } catch (e) {
-    console.error("DB close error:", e);
-  }
+  server.close();
+  await pool.end();
 
   process.exit(0);
 }
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
