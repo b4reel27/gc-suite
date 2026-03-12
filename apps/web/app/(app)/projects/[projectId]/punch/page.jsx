@@ -37,21 +37,11 @@ function statusUpper(s) {
 function statusBadgeClass(status) {
   const s = statusUpper(status);
 
-  if (s === "OPEN") {
-    return "bg-amber-100 text-amber-800 border-amber-200";
-  }
-  if (s === "IN_PROGRESS") {
-    return "bg-blue-100 text-blue-800 border-blue-200";
-  }
-  if (s === "DONE") {
-    return "bg-purple-100 text-purple-800 border-purple-200";
-  }
-  if (s === "VERIFIED") {
-    return "bg-emerald-100 text-emerald-800 border-emerald-200";
-  }
-  if (s === "CLOSED") {
-    return "bg-slate-200 text-slate-700 border-slate-300";
-  }
+  if (s === "OPEN") return "bg-amber-100 text-amber-800 border-amber-200";
+  if (s === "IN_PROGRESS") return "bg-blue-100 text-blue-800 border-blue-200";
+  if (s === "DONE") return "bg-purple-100 text-purple-800 border-purple-200";
+  if (s === "VERIFIED") return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  if (s === "CLOSED") return "bg-slate-200 text-slate-700 border-slate-300";
 
   return "bg-slate-100 text-slate-700 border-slate-200";
 }
@@ -82,6 +72,156 @@ function getApiBase() {
   return "http://localhost:3005";
 }
 
+function cleanSpaces(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function titleCase(text) {
+  return cleanSpaces(text)
+    .split(" ")
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(" ");
+}
+
+function detectTrade(note) {
+  const lower = String(note || "").toLowerCase();
+
+  const tradeMatchers = [
+    { trade: "Paint", patterns: ["paint", "painting", "touch up", "touch-up"] },
+    { trade: "Electrical", patterns: ["electrical", "electric", "outlet", "switch", "light", "fixture", "panel"] },
+    { trade: "Plumbing", patterns: ["plumbing", "sink", "toilet", "faucet", "drain", "water line"] },
+    { trade: "HVAC", patterns: ["hvac", "air", "thermostat", "diffuser", "duct", "vent", "rtu"] },
+    { trade: "Drywall", patterns: ["drywall", "sheetrock", "mud", "tape", "texture"] },
+    { trade: "Ceiling", patterns: ["ceiling", "grid", "tile"] },
+    { trade: "Doors/Hardware", patterns: ["door", "frame", "hardware", "closer", "lockset", "panic"] },
+    { trade: "Concrete", patterns: ["concrete", "slab", "sidewalk", "curb"] },
+    { trade: "Flooring", patterns: ["floor", "tile floor", "lvt", "carpet", "base"] },
+    { trade: "Glazing", patterns: ["glass", "glazing", "storefront", "window"] },
+    { trade: "Millwork", patterns: ["cabinet", "millwork", "countertop"] },
+    { trade: "Roofing", patterns: ["roof", "flashing", "coping"] },
+    { trade: "Site", patterns: ["site", "grading", "striping", "sidewalk", "parking lot"] },
+  ];
+
+  for (const entry of tradeMatchers) {
+    if (entry.patterns.some((p) => lower.includes(p))) {
+      return entry.trade;
+    }
+  }
+
+  return "";
+}
+
+function detectLocation(note) {
+  const original = cleanSpaces(note);
+  const lower = original.toLowerCase();
+
+  const directionalWall =
+    /(north wall|south wall|east wall|west wall|front wall|rear wall|back wall)/i.exec(original);
+  const roomMatch =
+    /(room\s*[a-z0-9\-]+)/i.exec(original) ||
+    /(rm\s*[a-z0-9\-]+)/i.exec(original);
+  const knownAreaMatch =
+    /(sales floor|entry|front entry|rear entry|corridor|hallway|restroom|office|break room|mechanical room|electrical room|vestibule|stock room)/i.exec(
+      original
+    );
+  const elevationMatch =
+    /(north elevation|south elevation|east elevation|west elevation|rear elevation|front elevation)/i.exec(
+      original
+    );
+
+  const parts = [];
+  if (roomMatch) parts.push(roomMatch[0]);
+  if (knownAreaMatch) parts.push(knownAreaMatch[0]);
+  if (directionalWall) parts.push(directionalWall[0]);
+  if (elevationMatch) parts.push(elevationMatch[0]);
+
+  if (parts.length) {
+    return titleCase(parts.join(" - "));
+  }
+
+  return "";
+}
+
+function detectTitle(note, trade, location) {
+  let text = cleanSpaces(note);
+  if (!text) return "";
+
+  let lowered = text.toLowerCase();
+
+  const removable = [
+    "room",
+    "rm",
+    "north wall",
+    "south wall",
+    "east wall",
+    "west wall",
+    "front wall",
+    "rear wall",
+    "back wall",
+    "sales floor",
+    "entry",
+    "front entry",
+    "rear entry",
+    "corridor",
+    "hallway",
+    "restroom",
+    "office",
+    "break room",
+    "mechanical room",
+    "electrical room",
+    "vestibule",
+    "stock room",
+    "north elevation",
+    "south elevation",
+    "east elevation",
+    "west elevation",
+    "rear elevation",
+    "front elevation",
+  ];
+
+  if (trade) {
+    lowered = lowered.replace(trade.toLowerCase(), "").trim();
+  }
+
+  for (const token of removable) {
+    lowered = lowered.replace(token, " ").trim();
+  }
+
+  lowered = lowered.replace(/\broom\s*[a-z0-9\-]+\b/gi, " ").trim();
+  lowered = lowered.replace(/\brm\s*[a-z0-9\-]+\b/gi, " ").trim();
+  lowered = lowered.replace(/\s+/g, " ").trim();
+
+  let title = lowered || text;
+  title = title.replace(/^-+/, "").replace(/^-/, "").trim();
+
+  if (!title) {
+    title = trade ? `${trade} issue` : text;
+  }
+
+  if (trade && !title.toLowerCase().includes(trade.toLowerCase())) {
+    title = `${trade} ${title}`.trim();
+  }
+
+  if (location && title.toLowerCase() === location.toLowerCase()) {
+    title = trade ? `${trade} issue` : text;
+  }
+
+  return titleCase(title);
+}
+
+function parseQuickIssueNote(note) {
+  const cleaned = cleanSpaces(note);
+  const trade = detectTrade(cleaned);
+  const location = detectLocation(cleaned);
+  const title = detectTitle(cleaned, trade, location);
+
+  return {
+    title,
+    trade,
+    location,
+  };
+}
+
 export default function PunchPage() {
   const { projectId } = useParams();
 
@@ -102,6 +242,18 @@ export default function PunchPage() {
   const [newLocation, setNewLocation] = useState("");
   const [newCompanyId, setNewCompanyId] = useState("");
 
+  const [quickNote, setQuickNote] = useState("");
+  const [quickPhotoFile, setQuickPhotoFile] = useState(null);
+  const [quickPhotoName, setQuickPhotoName] = useState("");
+  const [quickParsingResult, setQuickParsingResult] = useState({
+    title: "",
+    trade: "",
+    location: "",
+  });
+  const [quickAddBusy, setQuickAddBusy] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
   const [uploading, setUploading] = useState({});
   const [savingStatus, setSavingStatus] = useState({});
 
@@ -111,6 +263,17 @@ export default function PunchPage() {
   const [loadingPhotos, setLoadingPhotos] = useState(false);
 
   const apiBase = useMemo(() => getApiBase(), []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const supported =
+      !!window.SpeechRecognition || !!window.webkitSpeechRecognition;
+    setSpeechSupported(supported);
+  }, []);
+
+  useEffect(() => {
+    setQuickParsingResult(parseQuickIssueNote(quickNote));
+  }, [quickNote]);
 
   function fileUrl(filePath) {
     if (!filePath) return "";
@@ -262,6 +425,49 @@ export default function PunchPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [items]);
 
+  function applyQuickParseToForm() {
+    setNewTitle(quickParsingResult.title || "");
+    setNewTrade(quickParsingResult.trade || "");
+    setNewLocation(quickParsingResult.location || "");
+  }
+
+  async function startSpeechToText() {
+    try {
+      const SpeechRecognition =
+        typeof window !== "undefined" &&
+        (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+      if (!SpeechRecognition) {
+        setError("Speech recognition is not supported on this device/browser.");
+        return;
+      }
+
+      setError("");
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+
+      recognition.onerror = (event) => {
+        setIsListening(false);
+        setError(event?.error ? `Speech error: ${event.error}` : "Speech recognition failed");
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event?.results?.[0]?.[0]?.transcript || "";
+        setQuickNote((prev) => cleanSpaces([prev, transcript].filter(Boolean).join(" ")));
+      };
+
+      recognition.start();
+    } catch (e) {
+      setIsListening(false);
+      setError(e?.message || "Speech recognition failed");
+    }
+  }
+
   async function addIssue(e) {
     e.preventDefault();
     setError("");
@@ -293,6 +499,57 @@ export default function PunchPage() {
       setNewCompanyId("");
     } catch (e2) {
       setError(e2?.message || "Error creating issue");
+    }
+  }
+
+  async function quickCreateIssue() {
+    setError("");
+
+    const derivedTitle = quickParsingResult.title || cleanSpaces(quickNote);
+    const derivedTrade = quickParsingResult.trade || "";
+    const derivedLocation = quickParsingResult.location || "";
+
+    if (!derivedTitle) {
+      setError("Enter or speak a quick note first.");
+      return;
+    }
+
+    setQuickAddBusy(true);
+
+    try {
+      const payload = {
+        title: derivedTitle,
+        trade: derivedTrade || null,
+        location: derivedLocation || null,
+        assigned_company_id: newCompanyId || null,
+      };
+
+      const created = await apiFetch(`/projects/${projectId}/punch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (created?.id && quickPhotoFile) {
+        const fd = new FormData();
+        fd.append("photo", quickPhotoFile);
+
+        await apiFetch(`/punch/${created.id}/photo`, {
+          method: "POST",
+          body: fd,
+        });
+      }
+
+      setQuickNote("");
+      setQuickPhotoFile(null);
+      setQuickPhotoName("");
+      setQuickParsingResult({ title: "", trade: "", location: "" });
+
+      await refreshIssues();
+    } catch (e) {
+      setError(e?.message || "Error creating quick issue");
+    } finally {
+      setQuickAddBusy(false);
     }
   }
 
@@ -440,6 +697,121 @@ export default function PunchPage() {
         <StatCard title="Verified" value={stats.verified} />
         <StatCard title="Photos" value={stats.photos} />
       </div>
+
+      {iAmGC ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-base font-semibold text-slate-900">Quick Add Issue</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Take a photo, speak a note, and let GC Suite prefill the issue.
+            </p>
+          </div>
+
+          <div className="grid gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Quick Note</label>
+              <textarea
+                value={quickNote}
+                onChange={(e) => setQuickNote(e.target.value)}
+                rows={3}
+                placeholder='Example: "Paint touch up north wall room 103"'
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50">
+                <span>{quickPhotoName ? `Photo: ${quickPhotoName}` : "Take / Add Photo"}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setQuickPhotoFile(file);
+                    setQuickPhotoName(file?.name || "");
+                  }}
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={startSpeechToText}
+                disabled={!speechSupported || isListening}
+                className={`rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 ${
+                  !speechSupported || isListening ? "cursor-not-allowed opacity-50" : ""
+                }`}
+              >
+                {isListening ? "Listening..." : "🎤 Speak Issue"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickNote("");
+                  setQuickPhotoFile(null);
+                  setQuickPhotoName("");
+                  setQuickParsingResult({ title: "", trade: "", location: "" });
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Detected Title
+                </div>
+                <div className="mt-2 text-sm font-medium text-slate-900">
+                  {quickParsingResult.title || "—"}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Detected Trade
+                </div>
+                <div className="mt-2 text-sm font-medium text-slate-900">
+                  {quickParsingResult.trade || "—"}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Detected Location
+                </div>
+                <div className="mt-2 text-sm font-medium text-slate-900">
+                  {quickParsingResult.location || "—"}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={applyQuickParseToForm}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+              >
+                Apply to Full Form
+              </button>
+
+              <button
+                type="button"
+                onClick={quickCreateIssue}
+                disabled={quickAddBusy}
+                className={`rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:opacity-90 ${
+                  quickAddBusy ? "cursor-not-allowed opacity-50" : ""
+                }`}
+              >
+                {quickAddBusy ? "Saving..." : "Save Quick Issue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {iAmGC ? (
         <form
