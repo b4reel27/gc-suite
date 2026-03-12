@@ -88,6 +88,12 @@ function isGcRole(role) {
   return String(role || "").toUpperCase().startsWith("GC");
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || "")
+  );
+}
+
 async function getUserDisplayName(userId) {
   try {
     const { rows } = await pool.query(
@@ -175,6 +181,26 @@ function normalizePunchStatus(status) {
   const s = String(status || "").trim().toUpperCase();
   if (s === "PENDING_VERIFICATION") return "DONE";
   return s || "OPEN";
+}
+
+function normalizeScheduleStatus(status) {
+  const s = String(status || "").trim().toUpperCase();
+  if (!s) return "OPEN";
+  if (["DONE", "COMPLETE", "COMPLETED", "FINISHED"].includes(s)) return "DONE";
+  if (["VERIFIED", "VERIFY"].includes(s)) return "VERIFIED";
+  if (["CANCELED", "CANCELLED", "CANCEL"].includes(s)) return "CANCELED";
+  return "OPEN";
+}
+
+async function getScheduleItem(scheduleId) {
+  const { rows } = await pool.query(
+    `SELECT id, project_id, status
+     FROM schedule_items
+     WHERE id = $1`,
+    [scheduleId]
+  );
+
+  return rows[0] || null;
 }
 
 async function logActivity(projectId, userName, action, type, title) {
@@ -453,8 +479,9 @@ app.post("/projects/:projectId/punch", requireAuth, async (req, res) => {
 app.post("/punch/:issueId/start", requireAuth, async (req, res) => {
   try {
     const { issueId } = req.params;
-    const issue = await getIssue(issueId);
+    if (!isUuid(issueId)) return apiError(res, 400, "Invalid issueId");
 
+    const issue = await getIssue(issueId);
     if (!issue) return apiError(res, 404, "Issue not found");
 
     const membership = await requireProjectMember(issue.project_id, req.userId);
@@ -493,8 +520,9 @@ app.post("/punch/:issueId/start", requireAuth, async (req, res) => {
 app.post("/punch/:issueId/complete", requireAuth, async (req, res) => {
   try {
     const { issueId } = req.params;
-    const issue = await getIssue(issueId);
+    if (!isUuid(issueId)) return apiError(res, 400, "Invalid issueId");
 
+    const issue = await getIssue(issueId);
     if (!issue) return apiError(res, 404, "Issue not found");
 
     const membership = await requireProjectMember(issue.project_id, req.userId);
@@ -533,8 +561,9 @@ app.post("/punch/:issueId/complete", requireAuth, async (req, res) => {
 app.post("/punch/:issueId/verify", requireAuth, async (req, res) => {
   try {
     const { issueId } = req.params;
-    const issue = await getIssue(issueId);
+    if (!isUuid(issueId)) return apiError(res, 400, "Invalid issueId");
 
+    const issue = await getIssue(issueId);
     if (!issue) return apiError(res, 404, "Issue not found");
 
     await requireGcMembership(issue.project_id, req.userId);
@@ -570,8 +599,9 @@ app.post("/punch/:issueId/verify", requireAuth, async (req, res) => {
 app.post("/punch/:issueId/close", requireAuth, async (req, res) => {
   try {
     const { issueId } = req.params;
-    const issue = await getIssue(issueId);
+    if (!isUuid(issueId)) return apiError(res, 400, "Invalid issueId");
 
+    const issue = await getIssue(issueId);
     if (!issue) return apiError(res, 404, "Issue not found");
 
     await requireGcMembership(issue.project_id, req.userId);
@@ -607,6 +637,7 @@ app.post("/punch/:issueId/close", requireAuth, async (req, res) => {
 app.delete("/punch/:issueId", requireAuth, async (req, res) => {
   try {
     const { issueId } = req.params;
+    if (!isUuid(issueId)) return apiError(res, 400, "Invalid issueId");
 
     const issue = await getIssue(issueId);
     if (!issue) return apiError(res, 404, "Issue not found");
@@ -633,6 +664,7 @@ const upload = multer({
 app.post("/punch/:issueId/photo", requireAuth, upload.single("photo"), async (req, res) => {
   try {
     const { issueId } = req.params;
+    if (!isUuid(issueId)) return apiError(res, 400, "Invalid issueId");
 
     if (!req.file) {
       return apiError(res, 400, "No photo uploaded");
@@ -666,6 +698,7 @@ app.post("/punch/:issueId/photo", requireAuth, upload.single("photo"), async (re
 app.get("/punch/:issueId/photos", requireAuth, async (req, res) => {
   try {
     const { issueId } = req.params;
+    if (!isUuid(issueId)) return apiError(res, 400, "Invalid issueId");
 
     const issue = await getIssue(issueId);
     if (!issue) return apiError(res, 404, "Issue not found");
@@ -691,6 +724,38 @@ app.get("/punch/:issueId/photos", requireAuth, async (req, res) => {
 });
 
 /* SCHEDULE */
+
+app.get("/projects/:projectId/schedule", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    await requireProjectMember(projectId, req.userId);
+
+    const { rows } = await pool.query(
+      `SELECT
+         id,
+         project_id,
+         title,
+         date,
+         start_at,
+         end_at,
+         due_date,
+         notes,
+         status,
+         created_by_user_id,
+         created_at
+       FROM schedule_items
+       WHERE project_id = $1
+       ORDER BY COALESCE(start_at, date, due_date) NULLS LAST, created_at DESC`,
+      [projectId]
+    );
+
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
 
 app.post("/projects/:projectId/schedule", requireAuth, async (req, res) => {
   try {
@@ -724,7 +789,18 @@ app.post("/projects/:projectId/schedule", requireAuth, async (req, res) => {
          created_by_user_id
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING *`,
+       RETURNING
+         id,
+         project_id,
+         title,
+         date,
+         start_at,
+         end_at,
+         due_date,
+         notes,
+         status,
+         created_by_user_id,
+         created_at`,
       [
         projectId,
         cleanTitle,
@@ -743,6 +819,140 @@ app.post("/projects/:projectId/schedule", requireAuth, async (req, res) => {
     await logActivity(projectId, userName, "created", "Schedule", item.title);
 
     res.status(201).json(item);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/schedule-item/:id/done", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+
+    const item = await getScheduleItem(id);
+    if (!item) return apiError(res, 404, "Schedule item not found");
+
+    await requireGcMembership(item.project_id, req.userId);
+
+    const { rows } = await pool.query(
+      `UPDATE schedule_items
+       SET status = 'DONE'
+       WHERE id = $1
+       RETURNING
+         id,
+         project_id,
+         title,
+         date,
+         start_at,
+         end_at,
+         due_date,
+         notes,
+         status,
+         created_by_user_id,
+         created_at`,
+      [id]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/schedule-item/:id/verify", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+
+    const item = await getScheduleItem(id);
+    if (!item) return apiError(res, 404, "Schedule item not found");
+
+    await requireGcMembership(item.project_id, req.userId);
+
+    const current = normalizeScheduleStatus(item.status);
+    if (current !== "DONE" && current !== "VERIFIED") {
+      return apiError(res, 409, "Item must be DONE before it can be VERIFIED", {
+        currentStatus: item.status,
+      });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE schedule_items
+       SET status = 'VERIFIED'
+       WHERE id = $1
+       RETURNING
+         id,
+         project_id,
+         title,
+         date,
+         start_at,
+         end_at,
+         due_date,
+         notes,
+         status,
+         created_by_user_id,
+         created_at`,
+      [id]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/schedule-item/:id/cancel", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+
+    const item = await getScheduleItem(id);
+    if (!item) return apiError(res, 404, "Schedule item not found");
+
+    await requireGcMembership(item.project_id, req.userId);
+
+    const { rows } = await pool.query(
+      `UPDATE schedule_items
+       SET status = 'CANCELED'
+       WHERE id = $1
+       RETURNING
+         id,
+         project_id,
+         title,
+         date,
+         start_at,
+         end_at,
+         due_date,
+         notes,
+         status,
+         created_by_user_id,
+         created_at`,
+      [id]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.delete("/schedule-item/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+
+    const item = await getScheduleItem(id);
+    if (!item) return apiError(res, 404, "Schedule item not found");
+
+    await requireGcMembership(item.project_id, req.userId);
+
+    await pool.query(`DELETE FROM schedule_items WHERE id = $1`, [id]);
+
+    res.json({ ok: true, deleted: id });
   } catch (e) {
     console.error(e);
     return handleThrownAccessError(res, e);
