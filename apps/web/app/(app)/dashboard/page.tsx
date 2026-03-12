@@ -287,8 +287,12 @@ export default function DashboardPage() {
         return !Number.isNaN(d.getTime()) && d >= now;
       })
       .sort((a, b) => {
-        const da = new Date(a.start_date || a.date || a.start || a.scheduled_at);
-        const db = new Date(b.start_date || b.date || b.start || b.scheduled_at);
+        const da = new Date(
+          a.start_date || a.date || a.start || a.scheduled_at || 0
+        ).getTime();
+        const db = new Date(
+          b.start_date || b.date || b.start || b.scheduled_at || 0
+        ).getTime();
         return da - db;
       })
       .slice(0, 5);
