@@ -79,6 +79,165 @@ function fmtDate(value) {
   }
 }
 
+function getApiBase() {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined" && window?.location?.hostname) {
+    return `http://${window.location.hostname}:3005`;
+  }
+  return "http://localhost:3005";
+}
+
+function cleanSpaces(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function titleCase(text) {
+  return cleanSpaces(text)
+    .split(" ")
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(" ");
+}
+
+function formatTimeDisplay(raw) {
+  const text = cleanSpaces(raw).toLowerCase();
+  if (!text) return "";
+
+  if (text === "morning") return "Morning";
+  if (text === "afternoon") return "Afternoon";
+  if (text === "evening") return "Evening";
+  if (text === "noon") return "12:00 PM";
+
+  const match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (!match) return titleCase(text);
+
+  let hour = Number(match[1]);
+  const minute = match[2] || "00";
+  const suffix = match[3] ? match[3].toUpperCase() : "";
+
+  if (suffix) {
+    return `${hour}:${minute} ${suffix}`;
+  }
+
+  if (hour >= 1 && hour <= 7) {
+    return `${hour}:${minute} AM`;
+  }
+
+  if (hour >= 8 && hour <= 11) {
+    return `${hour}:${minute} AM`;
+  }
+
+  if (hour === 12) {
+    return `12:${minute} PM`;
+  }
+
+  return `${hour}:${minute}`;
+}
+
+function resolveRelativeDate(keyword) {
+  const lower = String(keyword || "").toLowerCase();
+  const now = new Date();
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (lower === "today") {
+    return startOfToday.toISOString().slice(0, 10);
+  }
+
+  if (lower === "tomorrow") {
+    const d = new Date(startOfToday);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const days = {
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+  };
+
+  if (lower in days) {
+    const target = days[lower];
+    const d = new Date(startOfToday);
+    const current = d.getDay();
+    let diff = target - current;
+    if (diff < 0) diff += 7;
+    if (diff === 0) diff = 7;
+    d.setDate(d.getDate() + diff);
+    return d.toISOString().slice(0, 10);
+  }
+
+  return "";
+}
+
+function parseScheduleNote(note) {
+  const original = cleanSpaces(note);
+  const lower = original.toLowerCase();
+
+  let detectedDateLabel = "";
+  let detectedDateValue = "";
+  let detectedTime = "";
+
+  const dayKeywords = [
+    "today",
+    "tomorrow",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+  ];
+
+  for (const day of dayKeywords) {
+    if (lower.includes(day)) {
+      detectedDateLabel = titleCase(day);
+      detectedDateValue = resolveRelativeDate(day);
+      break;
+    }
+  }
+
+  if (!detectedTime) {
+    const timeWordMatch = original.match(/\b(morning|afternoon|evening|noon)\b/i);
+    if (timeWordMatch) {
+      detectedTime = formatTimeDisplay(timeWordMatch[0]);
+    }
+  }
+
+  if (!detectedTime) {
+    const timeMatch = original.match(/\b\d{1,2}(?::\d{2})?\s?(am|pm)?\b/i);
+    if (timeMatch) {
+      detectedTime = formatTimeDisplay(timeMatch[0]);
+    }
+  }
+
+  let title = original;
+
+  if (detectedDateLabel) {
+    title = title.replace(new RegExp(detectedDateLabel, "i"), " ");
+  }
+
+  if (detectedTime) {
+    const rawTimePattern =
+      /\b(morning|afternoon|evening|noon|\d{1,2}(?::\d{2})?\s?(am|pm)?)\b/i;
+    title = title.replace(rawTimePattern, " ");
+  }
+
+  title = cleanSpaces(title).replace(/^[-,]/, "").trim();
+  title = titleCase(title || original);
+
+  return {
+    title,
+    dateLabel: detectedDateLabel,
+    dateValue: detectedDateValue,
+    time: detectedTime,
+  };
+}
+
 export default function SchedulePage() {
   const { projectId } = useParams();
 
@@ -86,28 +245,39 @@ export default function SchedulePage() {
   const [me, setMe] = useState(null);
   const [error, setError] = useState("");
 
-  // Project header meta
   const [projectName, setProjectName] = useState("");
   const [projectLocation, setProjectLocation] = useState("");
 
-  // Create fields
   const [newTitle, setNewTitle] = useState("");
   const [newDate, setNewDate] = useState("");
   const [newNotes, setNewNotes] = useState("");
 
-  // Filters
+  const [quickNote, setQuickNote] = useState("");
+  const [quickParsingResult, setQuickParsingResult] = useState({
+    title: "",
+    dateLabel: "",
+    dateValue: "",
+    time: "",
+  });
+  const [quickAddBusy, setQuickAddBusy] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
   const [filter, setFilter] = useState("ALL");
   const [query, setQuery] = useState("");
 
-  function getApiBase() {
-    if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
-    if (typeof window !== "undefined" && window?.location?.hostname) {
-      return `http://${window.location.hostname}:3005`;
-    }
-    return "http://localhost:3005";
-  }
-
   const apiBase = useMemo(() => getApiBase(), []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const supported =
+      !!window.SpeechRecognition || !!window.webkitSpeechRecognition;
+    setSpeechSupported(supported);
+  }, []);
+
+  useEffect(() => {
+    setQuickParsingResult(parseScheduleNote(quickNote));
+  }, [quickNote]);
 
   async function apiFetch(path, opts = {}) {
     const base = apiBase || getApiBase();
@@ -190,7 +360,6 @@ export default function SchedulePage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const iAmGC = isGcRole(me?.role);
@@ -220,6 +389,49 @@ export default function SchedulePage() {
     };
   }, [items]);
 
+  function applyQuickParseToForm() {
+    setNewTitle(quickParsingResult.title || "");
+    setNewDate(quickParsingResult.dateValue || "");
+    setNewNotes(quickParsingResult.time ? `Start time: ${quickParsingResult.time}` : "");
+  }
+
+  async function startSpeechToText() {
+    try {
+      const SpeechRecognition =
+        typeof window !== "undefined" &&
+        (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+      if (!SpeechRecognition) {
+        setError("Speech recognition is not supported on this device/browser.");
+        return;
+      }
+
+      setError("");
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+
+      recognition.onerror = (event) => {
+        setIsListening(false);
+        setError(event?.error ? `Speech error: ${event.error}` : "Speech recognition failed");
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event?.results?.[0]?.[0]?.transcript || "";
+        setQuickNote((prev) => cleanSpaces([prev, transcript].filter(Boolean).join(" ")));
+      };
+
+      recognition.start();
+    } catch (e) {
+      setIsListening(false);
+      setError(e?.message || "Speech recognition failed");
+    }
+  }
+
   async function addItem(e) {
     e.preventDefault();
     setError("");
@@ -243,8 +455,54 @@ export default function SchedulePage() {
       setNewTitle("");
       setNewDate("");
       setNewNotes("");
+      await refreshSchedule();
     } catch (e2) {
       setError(e2?.message || "Error creating schedule item");
+    }
+  }
+
+  async function quickCreateItem() {
+    setError("");
+
+    const derivedTitle = quickParsingResult.title || cleanSpaces(quickNote);
+    if (!derivedTitle) {
+      setError("Enter or speak a quick schedule note first.");
+      return;
+    }
+
+    setQuickAddBusy(true);
+
+    try {
+      const notesParts = [];
+      if (quickParsingResult.time) {
+        notesParts.push(`Start time: ${quickParsingResult.time}`);
+      }
+
+      const payload = {
+        title: derivedTitle,
+        date: quickParsingResult.dateValue || null,
+        notes: notesParts.join(" ") || null,
+      };
+
+      await apiFetch(`/projects/${projectId}/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      setQuickNote("");
+      setQuickParsingResult({
+        title: "",
+        dateLabel: "",
+        dateValue: "",
+        time: "",
+      });
+
+      await refreshSchedule();
+    } catch (e) {
+      setError(e?.message || "Error creating quick schedule item");
+    } finally {
+      setQuickAddBusy(false);
     }
   }
 
@@ -333,6 +591,109 @@ export default function SchedulePage() {
         <StatCard title="Verified" value={stats.verified} />
         <StatCard title="Canceled" value={stats.canceled} />
       </div>
+
+      {iAmGC ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-base font-semibold text-slate-900">Quick Add Schedule</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Speak or type a schedule note and let GC Suite prefill it.
+            </p>
+          </div>
+
+          <div className="grid gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Quick Note</label>
+              <textarea
+                value={quickNote}
+                onChange={(e) => setQuickNote(e.target.value)}
+                rows={3}
+                placeholder='Example: "Concrete pour Friday 7am"'
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={startSpeechToText}
+                disabled={!speechSupported || isListening}
+                className={`rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 ${
+                  !speechSupported || isListening ? "cursor-not-allowed opacity-50" : ""
+                }`}
+              >
+                {isListening ? "Listening..." : "🎤 Speak Schedule"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickNote("");
+                  setQuickParsingResult({
+                    title: "",
+                    dateLabel: "",
+                    dateValue: "",
+                    time: "",
+                  });
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Detected Title
+                </div>
+                <div className="mt-2 text-sm font-medium text-slate-900">
+                  {quickParsingResult.title || "—"}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Detected Date
+                </div>
+                <div className="mt-2 text-sm font-medium text-slate-900">
+                  {quickParsingResult.dateLabel || "—"}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Detected Time
+                </div>
+                <div className="mt-2 text-sm font-medium text-slate-900">
+                  {quickParsingResult.time || "—"}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={applyQuickParseToForm}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+              >
+                Apply to Full Form
+              </button>
+
+              <button
+                type="button"
+                onClick={quickCreateItem}
+                disabled={quickAddBusy}
+                className={`rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:opacity-90 ${
+                  quickAddBusy ? "cursor-not-allowed opacity-50" : ""
+                }`}
+              >
+                {quickAddBusy ? "Saving..." : "Save Quick Schedule"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {iAmGC ? (
         <form onSubmit={addItem} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
