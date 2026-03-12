@@ -34,23 +34,21 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
-  ssl: DATABASE_URL
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl: DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
 
 /* MIDDLEWARE */
 
 app.use(cors());
 app.use(helmet());
-app.use(express.json());
-
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(UPLOAD_ROOT));
 
 /* HELPERS */
 
-function apiError(res, code, msg) {
-  return res.status(code).json({ error: msg });
+function apiError(res, code, msg, extra = {}) {
+  return res.status(code).json({ error: msg, ...extra });
 }
 
 function signSessionToken(userId) {
@@ -72,12 +70,40 @@ function requireAuth(req, res, next) {
   }
 }
 
+function normalizeDateInput(value) {
+  if (!value) return null;
+
+  const str = String(value).trim();
+  if (!str) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  const d = new Date(str);
+  if (!Number.isFinite(d.getTime())) return null;
+
+  return d.toISOString().slice(0, 10);
+}
+
+async function getUserDisplayName(userId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT COALESCE(NULLIF(name, ''), email, 'User') AS display_name
+       FROM users
+       WHERE id = $1`,
+      [userId]
+    );
+    return rows[0]?.display_name || "User";
+  } catch {
+    return "User";
+  }
+}
+
 async function logActivity(projectId, userName, action, type, title) {
   try {
     await pool.query(
       `INSERT INTO project_activity
-      (project_id,user_name,action,item_type,item_title)
-      VALUES ($1,$2,$3,$4,$5)`,
+       (project_id, user_name, action, item_type, item_title)
+       VALUES ($1, $2, $3, $4, $5)`,
       [projectId, userName, action, type, title]
     );
   } catch (e) {
@@ -91,154 +117,234 @@ async function logActivity(projectId, userName, action, type, title) {
   await fs.mkdir(UPLOAD_ROOT, { recursive: true });
 
   await pool.query(`
-  CREATE TABLE IF NOT EXISTS project_activity(
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id uuid,
-    user_name text,
-    action text,
-    item_type text,
-    item_title text,
-    created_at timestamptz DEFAULT now()
-  )`);
-})();
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_activity (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id uuid,
+      user_name text,
+      action text,
+      item_type text,
+      item_title text,
+      created_at timestamptz DEFAULT now()
+    )
+  `);
+})().catch((e) => {
+  console.error("Startup error:", e);
+  process.exit(1);
+});
 
 /* HEALTH */
 
-app.get("/", (_, res) => {
+app.get("/", (_req, res) => {
   res.send("GC Suite API running");
 });
 
-app.get("/health", (_, res) => {
+app.get("/health", (_req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
 });
 
 /* AUTH */
 
 app.post("/auth/dev-login", async (req, res) => {
-  const { email } = req.body;
+  try {
+    const { email } = req.body || {};
 
-  const { rows } = await pool.query(
-    "SELECT id,email,name FROM users WHERE lower(email)=lower($1)",
-    [email]
-  );
+    if (!email) return apiError(res, 400, "email required");
 
-  const user = rows[0];
-  if (!user) return apiError(res, 404, "User not found");
+    const { rows } = await pool.query(
+      `SELECT id, email, name
+       FROM users
+       WHERE lower(email) = lower($1)`,
+      [email]
+    );
 
-  const token = signSessionToken(user.id);
+    const user = rows[0];
+    if (!user) return apiError(res, 404, "User not found");
 
-  res.json({ token, user });
+    const token = signSessionToken(user.id);
+
+    res.json({ token, user });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
 });
 
 /* PROJECTS */
 
 app.get("/projects", requireAuth, async (req, res) => {
-  const { rows } = await pool.query(
-    `SELECT p.id,p.name,p.location,pm.role
-     FROM projects p
-     JOIN project_members pm ON pm.project_id=p.id
-     WHERE pm.user_id=$1`,
-    [req.userId]
-  );
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.id, p.name, p.location, pm.role
+       FROM projects p
+       JOIN project_members pm ON pm.project_id = p.id
+       WHERE pm.user_id = $1
+       ORDER BY p.name`,
+      [req.userId]
+    );
 
-  res.json(rows);
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
 });
 
 /* PROJECT MEMBERSHIP */
 
 app.get("/projects/:projectId/me", requireAuth, async (req, res) => {
-  const { projectId } = req.params;
+  try {
+    const { projectId } = req.params;
 
-  const { rows } = await pool.query(
-    `SELECT role,company_id
-     FROM project_members
-     WHERE project_id=$1 AND user_id=$2`,
-    [projectId, req.userId]
-  );
+    const { rows } = await pool.query(
+      `SELECT role, company_id
+       FROM project_members
+       WHERE project_id = $1 AND user_id = $2`,
+      [projectId, req.userId]
+    );
 
-  const membership = rows[0];
+    const membership = rows[0];
 
-  if (!membership) {
-    return apiError(res, 403, "Not in project");
+    if (!membership) {
+      return apiError(res, 403, "Not in project");
+    }
+
+    res.json(membership);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
   }
-
-  res.json(membership);
 });
 
 /* PROJECT COMPANIES */
 
 app.get("/projects/:projectId/companies", requireAuth, async (req, res) => {
-  const { projectId } = req.params;
+  try {
+    const { projectId } = req.params;
 
-  const { rows } = await pool.query(
-    `SELECT c.id,c.name,c.type
-     FROM companies c
-     JOIN project_members pm ON pm.company_id=c.id
-     WHERE pm.project_id=$1`,
-    [projectId]
-  );
+    const { rows } = await pool.query(
+      `SELECT DISTINCT c.id, c.name, c.type
+       FROM companies c
+       JOIN project_members pm ON pm.company_id = c.id
+       WHERE pm.project_id = $1
+       ORDER BY c.name`,
+      [projectId]
+    );
 
-  res.json(rows);
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
 });
 
 /* ACTIVITY */
 
 app.get("/projects/:projectId/activity", requireAuth, async (req, res) => {
-  const { projectId } = req.params;
+  try {
+    const { projectId } = req.params;
 
-  const { rows } = await pool.query(
-    `SELECT *
-     FROM project_activity
-     WHERE project_id=$1
-     ORDER BY created_at DESC
-     LIMIT 30`,
-    [projectId]
-  );
+    const { rows } = await pool.query(
+      `SELECT *
+       FROM project_activity
+       WHERE project_id = $1
+       ORDER BY created_at DESC
+       LIMIT 30`,
+      [projectId]
+    );
 
-  res.json(rows);
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
 });
 
 /* PUNCH / FIELD ISSUES */
 
 app.get("/projects/:projectId/punch", requireAuth, async (req, res) => {
-  const { projectId } = req.params;
+  try {
+    const { projectId } = req.params;
 
-  const { rows } = await pool.query(
-    `SELECT *
-     FROM issues
-     WHERE project_id=$1
-     ORDER BY created_at DESC`,
-    [projectId]
-  );
+    const { rows } = await pool.query(
+      `SELECT i.*
+       FROM issues i
+       WHERE i.project_id = $1
+       ORDER BY i.created_at DESC`,
+      [projectId]
+    );
 
-  res.json(rows);
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
 });
 
 app.post("/projects/:projectId/punch", requireAuth, async (req, res) => {
-  const { projectId } = req.params;
-  const { title, trade, location, assigned_company_id } = req.body;
+  try {
+    const { projectId } = req.params;
+    const { title, trade, location, assigned_company_id, due_date } = req.body || {};
 
-  const { rows } = await pool.query(
-    `INSERT INTO issues
-     (project_id,title,trade,location,assigned_company_id,status)
-     VALUES ($1,$2,$3,$4,$5,'OPEN')
-     RETURNING *`,
-    [projectId, title, trade, location, assigned_company_id]
-  );
+    const cleanTitle = String(title || "").trim();
+    if (!cleanTitle) {
+      return apiError(res, 400, "title required");
+    }
 
-  const issue = rows[0];
+    const dueDate = normalizeDateInput(due_date);
+    const userName = await getUserDisplayName(req.userId);
 
-  await logActivity(projectId, "User", "created", "Issue", issue.title);
+    const { rows } = await pool.query(
+      `INSERT INTO issues
+       (
+         project_id,
+         title,
+         location,
+         trade,
+         status,
+         created_by_user_id,
+         assigned_company_id,
+         due_date
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        projectId,
+        cleanTitle,
+        location || null,
+        trade || null,
+        "OPEN",
+        req.userId,
+        assigned_company_id || null,
+        dueDate,
+      ]
+    );
 
-  res.json(issue);
+    const issue = rows[0];
+
+    await logActivity(projectId, userName, "created", "Issue", issue.title);
+
+    return res.status(201).json(issue);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, e.message || "Issue create failed");
+  }
 });
 
 app.delete("/punch/:issueId", requireAuth, async (req, res) => {
-  const { issueId } = req.params;
+  try {
+    const { issueId } = req.params;
 
-  await pool.query("DELETE FROM issues WHERE id=$1", [issueId]);
+    await pool.query(`DELETE FROM issues WHERE id = $1`, [issueId]);
 
-  res.json({ ok: true });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Delete failed");
+  }
 });
 
 /* PHOTO UPLOAD */
@@ -249,57 +355,109 @@ const upload = multer({
 });
 
 app.post("/punch/:issueId/photo", requireAuth, upload.single("photo"), async (req, res) => {
-  const { issueId } = req.params;
+  try {
+    const { issueId } = req.params;
 
-  const filePath = `/uploads/${req.file.filename}`;
+    if (!req.file) {
+      return apiError(res, 400, "No photo uploaded");
+    }
 
-  const { rows } = await pool.query(
-    `INSERT INTO punch_photos
-     (punch_id,file_path,original_name)
-     VALUES ($1,$2,$3)
-     RETURNING *`,
-    [issueId, filePath, req.file.originalname]
-  );
+    const filePath = `/uploads/${req.file.filename}`;
 
-  res.json(rows[0]);
+    const { rows } = await pool.query(
+      `INSERT INTO punch_photos
+       (punch_id, file_path, original_name)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [issueId, filePath, req.file.originalname]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Photo upload failed");
+  }
 });
 
 app.get("/punch/:issueId/photos", requireAuth, async (req, res) => {
-  const { issueId } = req.params;
+  try {
+    const { issueId } = req.params;
 
-  const { rows } = await pool.query(
-    `SELECT *
-     FROM punch_photos
-     WHERE punch_id=$1
-     ORDER BY created_at DESC`,
-    [issueId]
-  );
+    const { rows } = await pool.query(
+      `SELECT *
+       FROM punch_photos
+       WHERE punch_id = $1
+       ORDER BY created_at DESC`,
+      [issueId]
+    );
 
-  res.json(rows);
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
 });
 
 /* SCHEDULE */
 
 app.post("/projects/:projectId/schedule", requireAuth, async (req, res) => {
-  const { projectId } = req.params;
-  const { title } = req.body;
+  try {
+    const { projectId } = req.params;
+    const { title, date, start_at, end_at, due_date, notes } = req.body || {};
 
-  const { rows } = await pool.query(
-    `INSERT INTO schedule_items
-     (project_id,title,status)
-     VALUES ($1,$2,'OPEN')
-     RETURNING *`,
-    [projectId, title]
-  );
+    const cleanTitle = String(title || "").trim();
+    if (!cleanTitle) {
+      return apiError(res, 400, "title required");
+    }
 
-  await logActivity(projectId, "User", "created", "Schedule", title);
+    const normalizedDate = normalizeDateInput(date || start_at || due_date);
+    const normalizedStartAt = normalizeDateInput(start_at || date || due_date);
+    const normalizedEndAt = normalizeDateInput(end_at);
+    const normalizedDueDate = normalizeDateInput(due_date);
+    const userName = await getUserDisplayName(req.userId);
 
-  res.json(rows[0]);
+    const { rows } = await pool.query(
+      `INSERT INTO schedule_items
+       (
+         project_id,
+         title,
+         date,
+         start_at,
+         end_at,
+         due_date,
+         notes,
+         status,
+         created_by_user_id
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [
+        projectId,
+        cleanTitle,
+        normalizedDate,
+        normalizedStartAt,
+        normalizedEndAt,
+        normalizedDueDate,
+        notes || null,
+        "OPEN",
+        req.userId,
+      ]
+    );
+
+    const item = rows[0];
+
+    await logActivity(projectId, userName, "created", "Schedule", item.title);
+
+    res.status(201).json(item);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, e.message || "Schedule create failed");
+  }
 });
 
 /* ERROR HANDLER */
 
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({ error: err.message || "Server error" });
 });
@@ -315,10 +473,14 @@ const server = app.listen(PORT, HOST, () => {
 async function shutdown() {
   console.log("Shutting down...");
 
-  server.close();
-  await pool.end();
-
-  process.exit(0);
+  server.close(async () => {
+    try {
+      await pool.end();
+    } catch (e) {
+      console.error("Pool shutdown error:", e);
+    }
+    process.exit(0);
+  });
 }
 
 process.on("SIGINT", shutdown);
