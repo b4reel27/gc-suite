@@ -84,6 +84,10 @@ function normalizeDateInput(value) {
   return d.toISOString().slice(0, 10);
 }
 
+function isGcRole(role) {
+  return String(role || "").toUpperCase().startsWith("GC");
+}
+
 async function getUserDisplayName(userId) {
   try {
     const { rows } = await pool.query(
@@ -96,6 +100,81 @@ async function getUserDisplayName(userId) {
   } catch {
     return "User";
   }
+}
+
+async function getProjectMembership(projectId, userId) {
+  const { rows } = await pool.query(
+    `SELECT role, company_id
+     FROM project_members
+     WHERE project_id = $1 AND user_id = $2`,
+    [projectId, userId]
+  );
+
+  return rows[0] || null;
+}
+
+async function requireProjectMember(projectId, userId) {
+  const membership = await getProjectMembership(projectId, userId);
+
+  if (!membership) {
+    const err = new Error("Not in project");
+    err.status = 403;
+    throw err;
+  }
+
+  return membership;
+}
+
+async function requireGcMembership(projectId, userId) {
+  const membership = await requireProjectMember(projectId, userId);
+
+  if (!isGcRole(membership.role)) {
+    const err = new Error("GC only");
+    err.status = 403;
+    throw err;
+  }
+
+  return membership;
+}
+
+function handleThrownAccessError(res, err) {
+  if (err?.status) {
+    return apiError(res, err.status, err.message || "Access denied");
+  }
+  return apiError(res, 500, "Server error");
+}
+
+async function getIssue(issueId) {
+  const { rows } = await pool.query(
+    `SELECT id, project_id, assigned_company_id, status
+     FROM issues
+     WHERE id = $1`,
+    [issueId]
+  );
+
+  return rows[0] || null;
+}
+
+function requireIssueAccess(membership, issue) {
+  if (isGcRole(membership.role)) {
+    return { ok: true, isGC: true };
+  }
+
+  if (!issue.assigned_company_id) {
+    return { ok: false, status: 403, error: "Unassigned item (GC only for now)" };
+  }
+
+  if (membership.company_id !== issue.assigned_company_id) {
+    return { ok: false, status: 403, error: "Not your company’s item" };
+  }
+
+  return { ok: true, isGC: false };
+}
+
+function normalizePunchStatus(status) {
+  const s = String(status || "").trim().toUpperCase();
+  if (s === "PENDING_VERIFICATION") return "DONE";
+  return s || "OPEN";
 }
 
 async function logActivity(projectId, userName, action, type, title) {
@@ -116,9 +195,7 @@ async function logActivity(projectId, userName, action, type, title) {
 (async () => {
   await fs.mkdir(UPLOAD_ROOT, { recursive: true });
 
-  await pool.query(`
-    CREATE EXTENSION IF NOT EXISTS pgcrypto;
-  `);
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS project_activity (
@@ -193,20 +270,11 @@ app.get("/projects", requireAuth, async (req, res) => {
   }
 });
 
-/* PROJECT MEMBERSHIP */
-
 app.get("/projects/:projectId/me", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
 
-    const { rows } = await pool.query(
-      `SELECT role, company_id
-       FROM project_members
-       WHERE project_id = $1 AND user_id = $2`,
-      [projectId, req.userId]
-    );
-
-    const membership = rows[0];
+    const membership = await getProjectMembership(projectId, req.userId);
 
     if (!membership) {
       return apiError(res, 403, "Not in project");
@@ -219,11 +287,11 @@ app.get("/projects/:projectId/me", requireAuth, async (req, res) => {
   }
 });
 
-/* PROJECT COMPANIES */
-
 app.get("/projects/:projectId/companies", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
+
+    await requireProjectMember(projectId, req.userId);
 
     const { rows } = await pool.query(
       `SELECT DISTINCT c.id, c.name, c.type
@@ -237,7 +305,7 @@ app.get("/projects/:projectId/companies", requireAuth, async (req, res) => {
     res.json(rows);
   } catch (e) {
     console.error(e);
-    return apiError(res, 500, "Server error");
+    return handleThrownAccessError(res, e);
   }
 });
 
@@ -246,6 +314,8 @@ app.get("/projects/:projectId/companies", requireAuth, async (req, res) => {
 app.get("/projects/:projectId/activity", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
+
+    await requireProjectMember(projectId, req.userId);
 
     const { rows } = await pool.query(
       `SELECT *
@@ -259,7 +329,7 @@ app.get("/projects/:projectId/activity", requireAuth, async (req, res) => {
     res.json(rows);
   } catch (e) {
     console.error(e);
-    return apiError(res, 500, "Server error");
+    return handleThrownAccessError(res, e);
   }
 });
 
@@ -268,19 +338,63 @@ app.get("/projects/:projectId/activity", requireAuth, async (req, res) => {
 app.get("/projects/:projectId/punch", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
+    const membership = await requireProjectMember(projectId, req.userId);
 
-    const { rows } = await pool.query(
-      `SELECT i.*
-       FROM issues i
-       WHERE i.project_id = $1
-       ORDER BY i.created_at DESC`,
-      [projectId]
-    );
+    let result;
 
-    res.json(rows);
+    if (isGcRole(membership.role)) {
+      result = await pool.query(
+        `SELECT
+           i.*,
+           COALESCE(NULLIF(u.name, ''), u.email, 'User') AS created_by_name,
+           c.name AS assigned_company_name,
+           COALESCE(COUNT(pp.id), 0) AS photo_count,
+           (
+             SELECT pp2.file_path
+             FROM punch_photos pp2
+             WHERE pp2.punch_id = i.id
+             ORDER BY pp2.created_at DESC
+             LIMIT 1
+           ) AS latest_photo_path
+         FROM issues i
+         LEFT JOIN users u ON u.id = i.created_by_user_id
+         LEFT JOIN companies c ON c.id = i.assigned_company_id
+         LEFT JOIN punch_photos pp ON pp.punch_id = i.id
+         WHERE i.project_id = $1
+         GROUP BY i.id, u.name, u.email, c.name
+         ORDER BY i.created_at DESC`,
+        [projectId]
+      );
+    } else {
+      result = await pool.query(
+        `SELECT
+           i.*,
+           COALESCE(NULLIF(u.name, ''), u.email, 'User') AS created_by_name,
+           c.name AS assigned_company_name,
+           COALESCE(COUNT(pp.id), 0) AS photo_count,
+           (
+             SELECT pp2.file_path
+             FROM punch_photos pp2
+             WHERE pp2.punch_id = i.id
+             ORDER BY pp2.created_at DESC
+             LIMIT 1
+           ) AS latest_photo_path
+         FROM issues i
+         LEFT JOIN users u ON u.id = i.created_by_user_id
+         LEFT JOIN companies c ON c.id = i.assigned_company_id
+         LEFT JOIN punch_photos pp ON pp.punch_id = i.id
+         WHERE i.project_id = $1
+           AND i.assigned_company_id = $2
+         GROUP BY i.id, u.name, u.email, c.name
+         ORDER BY i.created_at DESC`,
+        [projectId, membership.company_id]
+      );
+    }
+
+    res.json(result.rows);
   } catch (e) {
     console.error(e);
-    return apiError(res, 500, "Server error");
+    return handleThrownAccessError(res, e);
   }
 });
 
@@ -288,6 +402,8 @@ app.post("/projects/:projectId/punch", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
     const { title, trade, location, assigned_company_id, due_date } = req.body || {};
+
+    await requireGcMembership(projectId, req.userId);
 
     const cleanTitle = String(title || "").trim();
     if (!cleanTitle) {
@@ -327,10 +443,164 @@ app.post("/projects/:projectId/punch", requireAuth, async (req, res) => {
 
     await logActivity(projectId, userName, "created", "Issue", issue.title);
 
-    return res.status(201).json(issue);
+    res.status(201).json(issue);
   } catch (e) {
     console.error(e);
-    return apiError(res, 500, e.message || "Issue create failed");
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/punch/:issueId/start", requireAuth, async (req, res) => {
+  try {
+    const { issueId } = req.params;
+    const issue = await getIssue(issueId);
+
+    if (!issue) return apiError(res, 404, "Issue not found");
+
+    const membership = await requireProjectMember(issue.project_id, req.userId);
+    const access = requireIssueAccess(membership, issue);
+
+    if (!access.ok) return apiError(res, access.status, access.error);
+
+    const current = normalizePunchStatus(issue.status);
+
+    if (current === "IN_PROGRESS") {
+      const { rows } = await pool.query(`SELECT * FROM issues WHERE id = $1`, [issueId]);
+      return res.json(rows[0]);
+    }
+
+    if (current !== "OPEN") {
+      return apiError(res, 409, "Invalid state for start", {
+        currentStatus: issue.status,
+      });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE issues
+       SET status = 'IN_PROGRESS'
+       WHERE id = $1
+       RETURNING *`,
+      [issueId]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/punch/:issueId/complete", requireAuth, async (req, res) => {
+  try {
+    const { issueId } = req.params;
+    const issue = await getIssue(issueId);
+
+    if (!issue) return apiError(res, 404, "Issue not found");
+
+    const membership = await requireProjectMember(issue.project_id, req.userId);
+    const access = requireIssueAccess(membership, issue);
+
+    if (!access.ok) return apiError(res, access.status, access.error);
+
+    const current = normalizePunchStatus(issue.status);
+
+    if (current === "DONE") {
+      const { rows } = await pool.query(`SELECT * FROM issues WHERE id = $1`, [issueId]);
+      return res.json(rows[0]);
+    }
+
+    if (current !== "OPEN" && current !== "IN_PROGRESS") {
+      return apiError(res, 409, "Invalid state for complete", {
+        currentStatus: issue.status,
+      });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE issues
+       SET status = 'DONE'
+       WHERE id = $1
+       RETURNING *`,
+      [issueId]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/punch/:issueId/verify", requireAuth, async (req, res) => {
+  try {
+    const { issueId } = req.params;
+    const issue = await getIssue(issueId);
+
+    if (!issue) return apiError(res, 404, "Issue not found");
+
+    await requireGcMembership(issue.project_id, req.userId);
+
+    const current = normalizePunchStatus(issue.status);
+
+    if (current === "VERIFIED") {
+      const { rows } = await pool.query(`SELECT * FROM issues WHERE id = $1`, [issueId]);
+      return res.json(rows[0]);
+    }
+
+    if (current !== "DONE") {
+      return apiError(res, 409, "Item must be DONE before it can be VERIFIED", {
+        currentStatus: issue.status,
+      });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE issues
+       SET status = 'VERIFIED'
+       WHERE id = $1
+       RETURNING *`,
+      [issueId]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/punch/:issueId/close", requireAuth, async (req, res) => {
+  try {
+    const { issueId } = req.params;
+    const issue = await getIssue(issueId);
+
+    if (!issue) return apiError(res, 404, "Issue not found");
+
+    await requireGcMembership(issue.project_id, req.userId);
+
+    const current = normalizePunchStatus(issue.status);
+
+    if (current === "CLOSED") {
+      const { rows } = await pool.query(`SELECT * FROM issues WHERE id = $1`, [issueId]);
+      return res.json(rows[0]);
+    }
+
+    if (current !== "VERIFIED") {
+      return apiError(res, 409, "Item must be VERIFIED before it can be CLOSED", {
+        currentStatus: issue.status,
+      });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE issues
+       SET status = 'CLOSED'
+       WHERE id = $1
+       RETURNING *`,
+      [issueId]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
   }
 });
 
@@ -338,12 +608,18 @@ app.delete("/punch/:issueId", requireAuth, async (req, res) => {
   try {
     const { issueId } = req.params;
 
+    const issue = await getIssue(issueId);
+    if (!issue) return apiError(res, 404, "Issue not found");
+
+    await requireGcMembership(issue.project_id, req.userId);
+
+    await pool.query(`DELETE FROM punch_photos WHERE punch_id = $1`, [issueId]);
     await pool.query(`DELETE FROM issues WHERE id = $1`, [issueId]);
 
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    return apiError(res, 500, "Delete failed");
+    return handleThrownAccessError(res, e);
   }
 });
 
@@ -361,6 +637,14 @@ app.post("/punch/:issueId/photo", requireAuth, upload.single("photo"), async (re
     if (!req.file) {
       return apiError(res, 400, "No photo uploaded");
     }
+
+    const issue = await getIssue(issueId);
+    if (!issue) return apiError(res, 404, "Issue not found");
+
+    const membership = await requireProjectMember(issue.project_id, req.userId);
+    const access = requireIssueAccess(membership, issue);
+
+    if (!access.ok) return apiError(res, access.status, access.error);
 
     const filePath = `/uploads/${req.file.filename}`;
 
@@ -383,6 +667,14 @@ app.get("/punch/:issueId/photos", requireAuth, async (req, res) => {
   try {
     const { issueId } = req.params;
 
+    const issue = await getIssue(issueId);
+    if (!issue) return apiError(res, 404, "Issue not found");
+
+    const membership = await requireProjectMember(issue.project_id, req.userId);
+    const access = requireIssueAccess(membership, issue);
+
+    if (!access.ok) return apiError(res, access.status, access.error);
+
     const { rows } = await pool.query(
       `SELECT *
        FROM punch_photos
@@ -394,7 +686,7 @@ app.get("/punch/:issueId/photos", requireAuth, async (req, res) => {
     res.json(rows);
   } catch (e) {
     console.error(e);
-    return apiError(res, 500, "Server error");
+    return handleThrownAccessError(res, e);
   }
 });
 
@@ -404,6 +696,8 @@ app.post("/projects/:projectId/schedule", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
     const { title, date, start_at, end_at, due_date, notes } = req.body || {};
+
+    await requireGcMembership(projectId, req.userId);
 
     const cleanTitle = String(title || "").trim();
     if (!cleanTitle) {
@@ -451,7 +745,7 @@ app.post("/projects/:projectId/schedule", requireAuth, async (req, res) => {
     res.status(201).json(item);
   } catch (e) {
     console.error(e);
-    return apiError(res, 500, e.message || "Schedule create failed");
+    return handleThrownAccessError(res, e);
   }
 });
 
