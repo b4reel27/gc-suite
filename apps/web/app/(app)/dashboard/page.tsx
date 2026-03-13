@@ -103,6 +103,10 @@ function statusUpper(v?: string) {
   return String(v || "").trim().toUpperCase();
 }
 
+function prettyStatus(v?: string) {
+  return statusUpper(v).replaceAll("_", " ");
+}
+
 function isOpenIssue(status?: string) {
   return ["OPEN", "IN_PROGRESS", "DONE"].includes(statusUpper(status));
 }
@@ -112,6 +116,15 @@ function cardTone(type?: string) {
   if (type === "warn") return "border-amber-200 bg-amber-50 text-amber-900";
   if (type === "good") return "border-emerald-200 bg-emerald-50 text-emerald-900";
   return "border-slate-200 bg-white text-slate-900";
+}
+
+function statusPillTone(status?: string) {
+  const s = statusUpper(status);
+  if (s === "OPEN") return "bg-red-50 text-red-700 ring-red-200";
+  if (s === "IN_PROGRESS") return "bg-amber-50 text-amber-700 ring-amber-200";
+  if (s === "VERIFIED") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (s === "DONE") return "bg-blue-50 text-blue-700 ring-blue-200";
+  return "bg-slate-100 text-slate-700 ring-slate-200";
 }
 
 function normalizeArrayResponse<T>(data: unknown): T[] {
@@ -205,6 +218,33 @@ function EmptyState({ text }: { text: string }) {
   return (
     <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
       {text}
+    </div>
+  );
+}
+
+function SectionHeader({
+  title,
+  subtitle,
+  href,
+}: {
+  title: string;
+  subtitle?: string;
+  href?: string;
+}) {
+  return (
+    <div className="mb-4 flex items-center justify-between">
+      <div>
+        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+        {subtitle ? <div className="mt-0.5 text-xs text-slate-500">{subtitle}</div> : null}
+      </div>
+      {href ? (
+        <Link
+          href={href}
+          className="text-sm font-semibold text-slate-600 transition hover:text-slate-900"
+        >
+          View all →
+        </Link>
+      ) : null}
     </div>
   );
 }
@@ -428,6 +468,10 @@ export default function DashboardPage() {
 
   const projectName = project?.name || "Project Dashboard";
   const projectLocation = project?.location || "";
+  const allClear =
+    overdueIssues.length === 0 &&
+    dueTodayIssues.length === 0 &&
+    tomorrowSchedule.length === 0;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -490,12 +534,23 @@ export default function DashboardPage() {
           <div className="space-y-6">
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900">
-                  Needs Attention
-                </h2>
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Action now
-                </span>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    Needs Attention
+                  </h2>
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    {allClear ? "All clear right now" : "Action now"}
+                  </div>
+                </div>
+                {allClear ? (
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                    Clear
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                    Active
+                  </span>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -528,17 +583,11 @@ export default function DashboardPage() {
 
             <section className="grid gap-6 lg:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Recent Issues
-                  </h2>
-                  <Link
-                    href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                    className="text-sm font-semibold text-slate-600 hover:text-slate-900"
-                  >
-                    View all →
-                  </Link>
-                </div>
+                <SectionHeader
+                  title="Recent Issues"
+                  subtitle="Latest field items logged"
+                  href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
+                />
 
                 <div className="space-y-3">
                   {recentIssues.length === 0 ? (
@@ -548,11 +597,11 @@ export default function DashboardPage() {
                       <Link
                         key={issue.id || `issue-${index}`}
                         href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                        className="block rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50"
+                        className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-slate-50 hover:shadow-md"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="font-semibold text-slate-900">
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold text-slate-900">
                               {issue.title || issue.description || "Untitled issue"}
                             </div>
                             <div className="mt-1 text-sm text-slate-500">
@@ -561,13 +610,18 @@ export default function DashboardPage() {
                                 .join(" • ") || "No location set"}
                             </div>
                           </div>
-                          <div className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                            {statusUpper(issue.status || "OPEN").replaceAll("_", " ")}
+                          <div
+                            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${statusPillTone(
+                              issue.status || "OPEN"
+                            )}`}
+                          >
+                            {prettyStatus(issue.status || "OPEN")}
                           </div>
                         </div>
 
-                        <div className="mt-3 text-xs text-slate-400">
-                          Due: {fmtDate(issue.due_date)}
+                        <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                          <span>Due: {fmtDate(issue.due_date)}</span>
+                          <span>{fmtDate(issue.updated_at || issue.created_at)}</span>
                         </div>
                       </Link>
                     ))
@@ -576,17 +630,11 @@ export default function DashboardPage() {
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-slate-900">
-                    Upcoming Schedule
-                  </h2>
-                  <Link
-                    href={projectId ? `/projects/${projectId}/schedule` : "#"}
-                    className="text-sm font-semibold text-slate-600 hover:text-slate-900"
-                  >
-                    View all →
-                  </Link>
-                </div>
+                <SectionHeader
+                  title="Upcoming Schedule"
+                  subtitle="What is coming next"
+                  href={projectId ? `/projects/${projectId}/schedule` : "#"}
+                />
 
                 <div className="space-y-3">
                   {upcomingSchedule.length === 0 ? (
@@ -600,11 +648,11 @@ export default function DashboardPage() {
                         <Link
                           key={item.id || `schedule-${index}`}
                           href={projectId ? `/projects/${projectId}/schedule` : "#"}
-                          className="block rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50"
+                          className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-slate-50 hover:shadow-md"
                         >
                           <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="font-semibold text-slate-900">
+                            <div className="min-w-0">
+                              <div className="truncate font-semibold text-slate-900">
                                 {item.title || item.name || "Untitled schedule item"}
                               </div>
                               <div className="mt-1 text-sm text-slate-500">
@@ -613,7 +661,7 @@ export default function DashboardPage() {
                                   .join(" • ") || "No location set"}
                               </div>
                             </div>
-                            <div className="text-right text-xs font-semibold text-slate-500">
+                            <div className="shrink-0 text-right text-xs font-semibold text-slate-500">
                               <div>{fmtDate(raw)}</div>
                               <div>{fmtTime(raw)}</div>
                             </div>
@@ -628,9 +676,14 @@ export default function DashboardPage() {
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-                  Project Summary
-                </h2>
+                <div>
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                    Project Summary
+                  </h2>
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    Quick counts at a glance
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -658,15 +711,11 @@ export default function DashboardPage() {
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-900">Recent Photos</h2>
-                <Link
-                  href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                  className="text-sm font-semibold text-slate-600 hover:text-slate-900"
-                >
-                  View all →
-                </Link>
-              </div>
+              <SectionHeader
+                title="Recent Photos"
+                subtitle="Latest issue photos"
+                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
+              />
 
               {recentPhotos.length === 0 ? (
                 <EmptyState text="No photos uploaded yet." />
@@ -684,13 +733,13 @@ export default function DashboardPage() {
                       <Link
                         key={photo.id || `photo-${index}`}
                         href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                        className="group overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
+                        className="group overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm transition hover:-translate-y-[1px] hover:shadow-md"
                       >
                         {src ? (
                           <img
                             src={src}
                             alt={photo.caption || "Project photo"}
-                            className="h-32 w-full object-cover transition group-hover:scale-[1.02]"
+                            className="h-32 w-full object-cover transition duration-200 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="flex h-32 items-center justify-center text-sm text-slate-400">
