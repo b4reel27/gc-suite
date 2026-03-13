@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-const ISSUE_ROUTE = "punch"; // UI says Issues, current working route is still /punch
+const ISSUE_ROUTE = "punch";
 
 type Project = {
   id?: string;
@@ -158,11 +158,11 @@ function StatCard({
   href?: string;
 }) {
   const content = (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:shadow-md">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:-translate-y-[1px] hover:shadow-md">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         {label}
       </div>
-      <div className="mt-2 text-3xl font-bold text-slate-900">{value}</div>
+      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
     </div>
   );
 
@@ -305,8 +305,8 @@ export default function DashboardPage() {
           setError(failedMessages[0]);
         }
       } catch (err) {
-        if (!isMounted) return;
         console.error("Dashboard load error:", err);
+        if (!isMounted) return;
         setError(err instanceof Error ? err.message : "Failed to load dashboard.");
       } finally {
         if (isMounted) setLoading(false);
@@ -468,18 +468,18 @@ export default function DashboardPage() {
 
         {loading ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              {[1, 2, 3, 4].map((n) => (
-                <div
-                  key={n}
-                  className="h-24 animate-pulse rounded-2xl border border-slate-200 bg-white"
-                />
-              ))}
-            </div>
             <div className="h-40 animate-pulse rounded-2xl border border-slate-200 bg-white" />
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white" />
               <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+            </div>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {[1, 2, 3, 4].map((n) => (
+                <div
+                  key={n}
+                  className="h-20 animate-pulse rounded-xl border border-slate-200 bg-white"
+                />
+              ))}
             </div>
           </div>
         ) : error ? (
@@ -488,36 +488,13 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-6">
-            <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <StatCard
-                label="Open Issues"
-                value={openIssues.length}
-                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-              />
-              <StatCard
-                label="In Progress"
-                value={inProgressIssues.length}
-                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-              />
-              <StatCard
-                label="Verified"
-                value={verifiedIssues.length}
-                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-              />
-              <StatCard
-                label="Photos"
-                value={photos.length}
-                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-              />
-            </section>
-
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-900">
+                <h2 className="text-xl font-bold text-slate-900">
                   Needs Attention
                 </h2>
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Jobsite pulse
+                  Action now
                 </span>
               </div>
 
@@ -646,6 +623,37 @@ export default function DashboardPage() {
                     })
                   )}
                 </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                  Project Summary
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <StatCard
+                  label="Open Issues"
+                  value={openIssues.length}
+                  href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
+                />
+                <StatCard
+                  label="In Progress"
+                  value={inProgressIssues.length}
+                  href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
+                />
+                <StatCard
+                  label="Verified"
+                  value={verifiedIssues.length}
+                  href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
+                />
+                <StatCard
+                  label="Photos"
+                  value={photos.length}
+                  href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
+                />
               </div>
             </section>
 
