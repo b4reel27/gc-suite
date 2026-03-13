@@ -5,10 +5,51 @@ import { useEffect, useMemo, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
+type Project = {
+  id?: string;
+  name?: string;
+  location?: string;
+};
+
+type Issue = {
+  id?: string;
+  title?: string;
+  description?: string;
+  location?: string;
+  trade?: string;
+  status?: string;
+  due_date?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type ScheduleItem = {
+  id?: string;
+  title?: string;
+  name?: string;
+  location?: string;
+  assigned_company?: string;
+  start_date?: string;
+  date?: string;
+  start?: string;
+  scheduled_at?: string;
+};
+
+type Photo = {
+  id?: string;
+  url?: string;
+  file_url?: string;
+  image_url?: string;
+  path?: string;
+  caption?: string;
+  created_at?: string;
+  uploaded_at?: string;
+};
+
 function getToken() {
   if (typeof window === "undefined") return "";
 
-  const cookieVal = (name) =>
+  const cookieVal = (name: string) =>
     document.cookie
       .split("; ")
       .find((c) => c.startsWith(name + "="))
@@ -35,7 +76,7 @@ function getActiveProjectId() {
   );
 }
 
-function fmtDate(dateStr) {
+function fmtDate(dateStr?: string) {
   if (!dateStr) return "—";
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return "—";
@@ -46,7 +87,7 @@ function fmtDate(dateStr) {
   });
 }
 
-function fmtTime(dateStr) {
+function fmtTime(dateStr?: string) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return "";
@@ -56,15 +97,15 @@ function fmtTime(dateStr) {
   });
 }
 
-function statusUpper(v) {
+function statusUpper(v?: string) {
   return String(v || "").trim().toUpperCase();
 }
 
-function isOpenIssue(status) {
+function isOpenIssue(status?: string) {
   return ["OPEN", "IN_PROGRESS", "DONE"].includes(statusUpper(status));
 }
 
-function cardTone(type) {
+function cardTone(type?: string) {
   if (type === "danger") {
     return "border-red-200 bg-red-50 text-red-900";
   }
@@ -77,7 +118,15 @@ function cardTone(type) {
   return "border-slate-200 bg-white text-slate-900";
 }
 
-function StatCard({ label, value, href }) {
+function StatCard({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value: number;
+  href?: string;
+}) {
   const content = (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:shadow-md">
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -92,7 +141,17 @@ function StatCard({ label, value, href }) {
   return <Link href={href}>{content}</Link>;
 }
 
-function AttentionRow({ icon, text, tone = "default", href }) {
+function AttentionRow({
+  icon,
+  text,
+  tone = "default",
+  href,
+}: {
+  icon: string;
+  text: string;
+  tone?: string;
+  href?: string;
+}) {
   const row = (
     <div
       className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${cardTone(
@@ -113,7 +172,7 @@ function AttentionRow({ icon, text, tone = "default", href }) {
   return <Link href={href}>{row}</Link>;
 }
 
-function EmptyState({ text }) {
+function EmptyState({ text }: { text: string }) {
   return (
     <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
       {text}
@@ -123,10 +182,10 @@ function EmptyState({ text }) {
 
 export default function DashboardPage() {
   const [projectId, setProjectId] = useState("");
-  const [project, setProject] = useState(null);
-  const [issues, setIssues] = useState([]);
-  const [scheduleItems, setScheduleItems] = useState([]);
-  const [photos, setPhotos] = useState([]);
+  const [project, setProject] = useState<Project | null>(null);
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -181,19 +240,27 @@ export default function DashboardPage() {
             )
           );
 
-        const parseJson = async (res, fallback = null) => {
+        const parseJson = async <T,>(res: Response, fallback: T): Promise<T> => {
           if (!res.ok) return fallback;
           try {
-            return await res.json();
+            return (await res.json()) as T;
           } catch {
             return fallback;
           }
         };
 
-        const projectData = await parseJson(projectRes, null);
-        const issuesData = await parseJson(issuesRes, []);
-        const scheduleData = await parseJson(scheduleRes, []);
-        const photosData = await parseJson(photosRes, []);
+        const projectData = await parseJson<Project | null>(projectRes, null);
+        const issuesData = await parseJson<Issue[] | { items?: Issue[] }>(
+          issuesRes,
+          []
+        );
+        const scheduleData = await parseJson<
+          ScheduleItem[] | { items?: ScheduleItem[] }
+        >(scheduleRes, []);
+        const photosData = await parseJson<Photo[] | { items?: Photo[] }>(
+          photosRes,
+          []
+        );
 
         setProject(projectData || null);
         setIssues(Array.isArray(issuesData) ? issuesData : issuesData?.items || []);
@@ -202,7 +269,7 @@ export default function DashboardPage() {
         );
         setPhotos(Array.isArray(photosData) ? photosData : photosData?.items || []);
       } catch (err) {
-        setError(err?.message || "Failed to load dashboard.");
+        setError(err instanceof Error ? err.message : "Failed to load dashboard.");
       } finally {
         setLoading(false);
       }
@@ -212,17 +279,20 @@ export default function DashboardPage() {
   }, []);
 
   const now = new Date();
+
   const todayStart = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
+
   const tomorrowStart = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
+
   const dayAfterTomorrowStart = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 2);
@@ -257,11 +327,7 @@ export default function DashboardPage() {
     return issues.filter((i) => {
       if (!isOpenIssue(i.status) || !i.due_date) return false;
       const d = new Date(i.due_date);
-      return (
-        !Number.isNaN(d.getTime()) &&
-        d >= todayStart &&
-        d < tomorrowStart
-      );
+      return !Number.isNaN(d.getTime()) && d >= todayStart && d < tomorrowStart;
     });
   }, [issues, todayStart, tomorrowStart]);
 
@@ -270,11 +336,7 @@ export default function DashboardPage() {
       const raw = s.start_date || s.date || s.start || s.scheduled_at;
       if (!raw) return false;
       const d = new Date(raw);
-      return (
-        !Number.isNaN(d.getTime()) &&
-        d >= tomorrowStart &&
-        d < dayAfterTomorrowStart
-      );
+      return !Number.isNaN(d.getTime()) && d >= tomorrowStart && d < dayAfterTomorrowStart;
     });
   }, [scheduleItems, tomorrowStart, dayAfterTomorrowStart]);
 
@@ -301,8 +363,12 @@ export default function DashboardPage() {
   const recentIssues = useMemo(() => {
     return [...issues]
       .sort((a, b) => {
-        const da = new Date(a.updated_at || a.created_at || a.due_date || 0);
-        const db = new Date(b.updated_at || b.created_at || b.due_date || 0);
+        const da = new Date(
+          a.updated_at || a.created_at || a.due_date || 0
+        ).getTime();
+        const db = new Date(
+          b.updated_at || b.created_at || b.due_date || 0
+        ).getTime();
         return db - da;
       })
       .slice(0, 5);
@@ -311,8 +377,8 @@ export default function DashboardPage() {
   const recentPhotos = useMemo(() => {
     return [...photos]
       .sort((a, b) => {
-        const da = new Date(a.created_at || a.uploaded_at || 0);
-        const db = new Date(b.created_at || b.uploaded_at || 0);
+        const da = new Date(a.created_at || a.uploaded_at || 0).getTime();
+        const db = new Date(b.created_at || b.uploaded_at || 0).getTime();
         return db - da;
       })
       .slice(0, 8);
@@ -459,18 +525,16 @@ export default function DashboardPage() {
                   {recentIssues.length === 0 ? (
                     <EmptyState text="No issues yet." />
                   ) : (
-                    recentIssues.map((issue) => (
+                    recentIssues.map((issue, index) => (
                       <Link
-                        key={issue.id}
+                        key={issue.id || `issue-${index}`}
                         href={projectId ? `/projects/${projectId}/issues` : "#"}
                         className="block rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="font-semibold text-slate-900">
-                              {issue.title ||
-                                issue.description ||
-                                "Untitled issue"}
+                              {issue.title || issue.description || "Untitled issue"}
                             </div>
                             <div className="mt-1 text-sm text-slate-500">
                               {[issue.location, issue.trade]
@@ -509,13 +573,13 @@ export default function DashboardPage() {
                   {upcomingSchedule.length === 0 ? (
                     <EmptyState text="No upcoming schedule items." />
                   ) : (
-                    upcomingSchedule.map((item) => {
+                    upcomingSchedule.map((item, index) => {
                       const raw =
                         item.start_date || item.date || item.start || item.scheduled_at;
 
                       return (
                         <Link
-                          key={item.id}
+                          key={item.id || `schedule-${index}`}
                           href={projectId ? `/projects/${projectId}/schedule` : "#"}
                           className="block rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50"
                         >
@@ -558,7 +622,7 @@ export default function DashboardPage() {
                 <EmptyState text="No photos uploaded yet." />
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                  {recentPhotos.map((photo) => {
+                  {recentPhotos.map((photo, index) => {
                     const src =
                       photo.url ||
                       photo.file_url ||
@@ -568,7 +632,7 @@ export default function DashboardPage() {
 
                     return (
                       <Link
-                        key={photo.id}
+                        key={photo.id || `photo-${index}`}
                         href={projectId ? `/projects/${projectId}/photos` : "#"}
                         className="group overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
                       >
