@@ -161,6 +161,22 @@ async function fetchJson<T>(
   }
 }
 
+function SectionShell({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${className}`}
+    >
+      {children}
+    </section>
+  );
+}
+
 function StatCard({
   label,
   value,
@@ -172,10 +188,10 @@ function StatCard({
 }) {
   const content = (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:-translate-y-[1px] hover:shadow-md">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-[11px]">
         {label}
       </div>
-      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
+      <div className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">{value}</div>
     </div>
   );
 
@@ -196,15 +212,15 @@ function AttentionRow({
 }) {
   const row = (
     <div
-      className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${cardTone(
+      className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-3 sm:px-4 ${cardTone(
         tone
       )}`}
     >
-      <div className="flex items-center gap-3">
-        <span className="text-lg">{icon}</span>
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="text-base sm:text-lg">{icon}</span>
         <span className="text-sm font-medium">{text}</span>
       </div>
-      <span className="text-xs font-semibold uppercase tracking-wide opacity-70">
+      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide opacity-70">
         View
       </span>
     </div>
@@ -216,7 +232,7 @@ function AttentionRow({
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
       {text}
     </div>
   );
@@ -232,15 +248,15 @@ function SectionHeader({
   href?: string;
 }) {
   return (
-    <div className="mb-4 flex items-center justify-between">
-      <div>
-        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-        {subtitle ? <div className="mt-0.5 text-xs text-slate-500">{subtitle}</div> : null}
+    <div className="mb-3 flex items-start justify-between gap-3 sm:mb-4">
+      <div className="min-w-0">
+        <h2 className="text-base font-bold text-slate-900 sm:text-lg">{title}</h2>
+        {subtitle ? <div className="mt-0.5 text-[11px] text-slate-500 sm:text-xs">{subtitle}</div> : null}
       </div>
       {href ? (
         <Link
           href={href}
-          className="text-sm font-semibold text-slate-600 transition hover:text-slate-900"
+          className="shrink-0 text-xs font-semibold text-slate-600 transition hover:text-slate-900 sm:text-sm"
         >
           View all →
         </Link>
@@ -475,11 +491,11 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 pb-24 pt-4 sm:px-6 lg:px-8">
-        <div className="sticky top-0 z-20 -mx-4 mb-4 border-b border-slate-200 bg-slate-50/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div className="mx-auto max-w-5xl px-3 pb-24 pt-3 sm:px-6 lg:px-8">
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-3 sm:gap-4">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
                 {projectName}
               </h1>
               <div className="mt-1 text-sm text-slate-500">
@@ -487,22 +503,22 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               <Link
                 href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                className="rounded-xl bg-slate-900 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm"
               >
                 + Issue
               </Link>
               <Link
                 href={projectId ? `/projects/${projectId}/schedule` : "#"}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Schedule
               </Link>
               <Link
                 href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Photo
               </Link>
@@ -512,16 +528,16 @@ export default function DashboardPage() {
 
         {loading ? (
           <div className="space-y-4">
-            <div className="h-40 animate-pulse rounded-2xl border border-slate-200 bg-white" />
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white" />
-              <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+            <div className="h-32 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="h-52 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+              <div className="h-52 animate-pulse rounded-2xl border border-slate-200 bg-white" />
             </div>
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               {[1, 2, 3, 4].map((n) => (
                 <div
                   key={n}
-                  className="h-20 animate-pulse rounded-xl border border-slate-200 bg-white"
+                  className="h-18 animate-pulse rounded-xl border border-slate-200 bg-white"
                 />
               ))}
             </div>
@@ -531,23 +547,21 @@ export default function DashboardPage() {
             {error}
           </div>
         ) : (
-          <div className="space-y-6">
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center justify-between">
+          <div className="space-y-4 sm:space-y-5">
+            <SectionShell>
+              <div className="mb-3 flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">
-                    Needs Attention
-                  </h2>
-                  <div className="mt-0.5 text-xs text-slate-500">
+                  <h2 className="text-xl font-bold text-slate-900">Needs Attention</h2>
+                  <div className="mt-0.5 text-sm text-slate-500">
                     {allClear ? "All clear right now" : "Action now"}
                   </div>
                 </div>
                 {allClear ? (
-                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
                     Clear
                   </span>
                 ) : (
-                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
                     Active
                   </span>
                 )}
@@ -579,10 +593,10 @@ export default function DashboardPage() {
                   href={projectId ? `/projects/${projectId}/schedule` : "#"}
                 />
               </div>
-            </section>
+            </SectionShell>
 
-            <section className="grid gap-6 lg:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="grid gap-4 md:grid-cols-2">
+              <SectionShell className="border-2 border-slate-200">
                 <SectionHeader
                   title="Recent Issues"
                   subtitle="Latest field items logged"
@@ -597,11 +611,11 @@ export default function DashboardPage() {
                       <Link
                         key={issue.id || `issue-${index}`}
                         href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                        className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-slate-50 hover:shadow-md"
+                        className="block rounded-xl border border-slate-300 bg-slate-50 p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-white hover:shadow-md"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="truncate font-semibold text-slate-900">
+                            <div className="line-clamp-2 font-semibold text-slate-900">
                               {issue.title || issue.description || "Untitled issue"}
                             </div>
                             <div className="mt-1 text-sm text-slate-500">
@@ -627,9 +641,9 @@ export default function DashboardPage() {
                     ))
                   )}
                 </div>
-              </div>
+              </SectionShell>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <SectionShell>
                 <SectionHeader
                   title="Upcoming Schedule"
                   subtitle="What is coming next"
@@ -648,11 +662,11 @@ export default function DashboardPage() {
                         <Link
                           key={item.id || `schedule-${index}`}
                           href={projectId ? `/projects/${projectId}/schedule` : "#"}
-                          className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-slate-50 hover:shadow-md"
+                          className="block rounded-xl border border-slate-300 bg-slate-50 p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-white hover:shadow-md"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="truncate font-semibold text-slate-900">
+                              <div className="line-clamp-2 font-semibold text-slate-900">
                                 {item.title || item.name || "Untitled schedule item"}
                               </div>
                               <div className="mt-1 text-sm text-slate-500">
@@ -671,22 +685,20 @@ export default function DashboardPage() {
                     })
                   )}
                 </div>
-              </div>
-            </section>
+              </SectionShell>
+            </div>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-                    Project Summary
-                  </h2>
-                  <div className="mt-0.5 text-xs text-slate-500">
-                    Quick counts at a glance
-                  </div>
+            <SectionShell>
+              <div className="mb-3">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                  Project Summary
+                </h2>
+                <div className="mt-0.5 text-[11px] text-slate-500">
+                  Quick counts at a glance
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <StatCard
                   label="Open Issues"
                   value={openIssues.length}
@@ -708,9 +720,9 @@ export default function DashboardPage() {
                   href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
                 />
               </div>
-            </section>
+            </SectionShell>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <SectionShell>
               <SectionHeader
                 title="Recent Photos"
                 subtitle="Latest issue photos"
@@ -739,10 +751,10 @@ export default function DashboardPage() {
                           <img
                             src={src}
                             alt={photo.caption || "Project photo"}
-                            className="h-32 w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                            className="h-28 w-full object-cover transition duration-200 group-hover:scale-[1.02] sm:h-32"
                           />
                         ) : (
-                          <div className="flex h-32 items-center justify-center text-sm text-slate-400">
+                          <div className="flex h-28 items-center justify-center text-sm text-slate-400 sm:h-32">
                             No preview
                           </div>
                         )}
@@ -751,7 +763,7 @@ export default function DashboardPage() {
                   })}
                 </div>
               )}
-            </section>
+            </SectionShell>
           </div>
         )}
       </div>
