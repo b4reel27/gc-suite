@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const ISSUE_ROUTE = "punch"; // UI says Issues, current working route is still /punch
 
 type Project = {
   id?: string;
@@ -107,16 +108,44 @@ function isOpenIssue(status?: string) {
 }
 
 function cardTone(type?: string) {
-  if (type === "danger") {
-    return "border-red-200 bg-red-50 text-red-900";
-  }
-  if (type === "warn") {
-    return "border-amber-200 bg-amber-50 text-amber-900";
-  }
-  if (type === "good") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-900";
-  }
+  if (type === "danger") return "border-red-200 bg-red-50 text-red-900";
+  if (type === "warn") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (type === "good") return "border-emerald-200 bg-emerald-50 text-emerald-900";
   return "border-slate-200 bg-white text-slate-900";
+}
+
+function normalizeArrayResponse<T>(data: unknown): T[] {
+  if (Array.isArray(data)) return data as T[];
+  if (data && typeof data === "object" && Array.isArray((data as { items?: T[] }).items)) {
+    return (data as { items?: T[] }).items || [];
+  }
+  return [];
+}
+
+async function fetchJson<T>(
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs = 15000
+): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`${res.status} ${res.statusText}${text ? ` - ${text}` : ""}`);
+    }
+
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function StatCard({
@@ -193,27 +222,28 @@ export default function DashboardPage() {
     const pid = getActiveProjectId();
     setProjectId(pid);
 
+    if (!API_URL) {
+      setError("NEXT_PUBLIC_API_URL is not set.");
+      setLoading(false);
+      return;
+    }
+
+    const token = getToken();
+    if (!token) {
+      setError("No auth token found.");
+      setLoading(false);
+      return;
+    }
+
+    if (!pid) {
+      setError("No active project selected.");
+      setLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
     async function load() {
-      const token = getToken();
-
-      if (!API_URL) {
-        setError("NEXT_PUBLIC_API_URL is not set.");
-        setLoading(false);
-        return;
-      }
-
-      if (!token) {
-        setError("No auth token found.");
-        setLoading(false);
-        return;
-      }
-
-      if (!pid) {
-        setError("No active project selected.");
-        setLoading(false);
-        return;
-      }
-
       try {
         setLoading(true);
         setError("");
@@ -222,51 +252,35 @@ export default function DashboardPage() {
           Authorization: `Bearer ${token}`,
         };
 
-        const urls = [
-          `${API_URL}/projects`,
-          `${API_URL}/projects/${pid}/punch`,
-          `${API_URL}/projects/${pid}/schedule`,
-        ];
+        const results = await Promise.allSettled([
+          fetchJson<Project[]>(`${API_URL}/projects`, headers),
+          fetchJson<Issue[] | { items?: Issue[] }>(
+            `${API_URL}/projects/${pid}/punch`,
+            headers
+          ),
+          fetchJson<ScheduleItem[] | { items?: ScheduleItem[] }>(
+            `${API_URL}/projects/${pid}/schedule`,
+            headers
+          ),
+        ]);
 
-        const [projectsRes, issuesRes, scheduleRes] = await Promise.all(
-          urls.map((u) =>
-            fetch(u, {
-              headers,
-              credentials: "include",
-              cache: "no-store",
-            })
-          )
-        );
+        if (!isMounted) return;
 
-        const parseJson = async <T,>(res: Response, fallback: T): Promise<T> => {
-          if (!res.ok) return fallback;
-          try {
-            return (await res.json()) as T;
-          } catch {
-            return fallback;
-          }
-        };
+        const [projectsResult, issuesResult, scheduleResult] = results;
 
-        const projectsData = await parseJson<Project[]>(projectsRes, []);
-        const issuesData = await parseJson<Issue[] | { items?: Issue[] }>(
-          issuesRes,
-          []
-        );
-        const scheduleData = await parseJson<
-          ScheduleItem[] | { items?: ScheduleItem[] }
-        >(scheduleRes, []);
+        const projectsData =
+          projectsResult.status === "fulfilled" ? projectsResult.value : [];
+        const issuesData =
+          issuesResult.status === "fulfilled" ? issuesResult.value : [];
+        const scheduleData =
+          scheduleResult.status === "fulfilled" ? scheduleResult.value : [];
 
         const activeProject = Array.isArray(projectsData)
           ? projectsData.find((p) => p.id === pid) || null
           : null;
 
-        const normalizedIssues = Array.isArray(issuesData)
-          ? issuesData
-          : issuesData?.items || [];
-
-        const normalizedSchedule = Array.isArray(scheduleData)
-          ? scheduleData
-          : scheduleData?.items || [];
+        const normalizedIssues = normalizeArrayResponse<Issue>(issuesData);
+        const normalizedSchedule = normalizeArrayResponse<ScheduleItem>(scheduleData);
 
         setProject(activeProject);
         setIssues(normalizedIssues);
@@ -282,14 +296,28 @@ export default function DashboardPage() {
               created_at: i.updated_at || i.created_at,
             }))
         );
+
+        const failedMessages = results
+          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+          .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)));
+
+        if (!activeProject && failedMessages.length > 0) {
+          setError(failedMessages[0]);
+        }
       } catch (err) {
+        if (!isMounted) return;
+        console.error("Dashboard load error:", err);
         setError(err instanceof Error ? err.message : "Failed to load dashboard.");
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
 
     load();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const now = new Date();
@@ -417,7 +445,7 @@ export default function DashboardPage() {
 
             <div className="flex flex-wrap gap-2">
               <Link
-                href={projectId ? `/projects/${projectId}/punch` : "#"}
+                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
                 className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm"
               >
                 + Issue
@@ -429,7 +457,7 @@ export default function DashboardPage() {
                 + Schedule
               </Link>
               <Link
-                href={projectId ? `/projects/${projectId}/punch` : "#"}
+                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
                 className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
               >
                 + Photo
@@ -464,22 +492,22 @@ export default function DashboardPage() {
               <StatCard
                 label="Open Issues"
                 value={openIssues.length}
-                href={projectId ? `/projects/${projectId}/punch` : "#"}
+                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
               />
               <StatCard
                 label="In Progress"
                 value={inProgressIssues.length}
-                href={projectId ? `/projects/${projectId}/punch` : "#"}
+                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
               />
               <StatCard
                 label="Verified"
                 value={verifiedIssues.length}
-                href={projectId ? `/projects/${projectId}/punch` : "#"}
+                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
               />
               <StatCard
                 label="Photos"
                 value={photos.length}
-                href={projectId ? `/projects/${projectId}/punch` : "#"}
+                href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
               />
             </section>
 
@@ -500,7 +528,7 @@ export default function DashboardPage() {
                     overdueIssues.length === 1 ? "" : "s"
                   }`}
                   tone={overdueIssues.length ? "danger" : "good"}
-                  href={projectId ? `/projects/${projectId}/punch` : "#"}
+                  href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
                 />
                 <AttentionRow
                   icon="📌"
@@ -508,7 +536,7 @@ export default function DashboardPage() {
                     dueTodayIssues.length === 1 ? "" : "s"
                   } due today`}
                   tone={dueTodayIssues.length ? "warn" : "good"}
-                  href={projectId ? `/projects/${projectId}/punch` : "#"}
+                  href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
                 />
                 <AttentionRow
                   icon="📅"
@@ -528,7 +556,7 @@ export default function DashboardPage() {
                     Recent Issues
                   </h2>
                   <Link
-                    href={projectId ? `/projects/${projectId}/punch` : "#"}
+                    href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
                     className="text-sm font-semibold text-slate-600 hover:text-slate-900"
                   >
                     View all →
@@ -542,7 +570,7 @@ export default function DashboardPage() {
                     recentIssues.map((issue, index) => (
                       <Link
                         key={issue.id || `issue-${index}`}
-                        href={projectId ? `/projects/${projectId}/punch` : "#"}
+                        href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
                         className="block rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -625,7 +653,7 @@ export default function DashboardPage() {
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-slate-900">Recent Photos</h2>
                 <Link
-                  href={projectId ? `/projects/${projectId}/punch` : "#"}
+                  href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
                   className="text-sm font-semibold text-slate-600 hover:text-slate-900"
                 >
                   View all →
@@ -647,7 +675,7 @@ export default function DashboardPage() {
                     return (
                       <Link
                         key={photo.id || `photo-${index}`}
-                        href={projectId ? `/projects/${projectId}/punch` : "#"}
+                        href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
                         className="group overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
                       >
                         {src ? (
@@ -679,7 +707,7 @@ export default function DashboardPage() {
 
           <div className="absolute bottom-16 right-0 w-48 space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
             <Link
-              href={projectId ? `/projects/${projectId}/punch` : "#"}
+              href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
               className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             >
               📸 New Issue
@@ -691,7 +719,7 @@ export default function DashboardPage() {
               📅 New Schedule
             </Link>
             <Link
-              href={projectId ? `/projects/${projectId}/punch` : "#"}
+              href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
               className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             >
               📷 Add Photo
