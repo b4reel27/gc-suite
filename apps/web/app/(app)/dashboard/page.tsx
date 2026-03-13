@@ -21,6 +21,7 @@ type Issue = {
   due_date?: string;
   created_at?: string;
   updated_at?: string;
+  latest_photo_path?: string;
 };
 
 type ScheduleItem = {
@@ -137,7 +138,6 @@ function StatCard({
   );
 
   if (!href) return content;
-
   return <Link href={href}>{content}</Link>;
 }
 
@@ -223,22 +223,20 @@ export default function DashboardPage() {
         };
 
         const urls = [
-          `${API_URL}/projects/${pid}`,
-          `${API_URL}/projects/${pid}/issues`,
+          `${API_URL}/projects`,
+          `${API_URL}/projects/${pid}/punch`,
           `${API_URL}/projects/${pid}/schedule`,
-          `${API_URL}/projects/${pid}/photos`,
         ];
 
-        const [projectRes, issuesRes, scheduleRes, photosRes] =
-          await Promise.all(
-            urls.map((u) =>
-              fetch(u, {
-                headers,
-                credentials: "include",
-                cache: "no-store",
-              })
-            )
-          );
+        const [projectsRes, issuesRes, scheduleRes] = await Promise.all(
+          urls.map((u) =>
+            fetch(u, {
+              headers,
+              credentials: "include",
+              cache: "no-store",
+            })
+          )
+        );
 
         const parseJson = async <T,>(res: Response, fallback: T): Promise<T> => {
           if (!res.ok) return fallback;
@@ -249,7 +247,7 @@ export default function DashboardPage() {
           }
         };
 
-        const projectData = await parseJson<Project | null>(projectRes, null);
+        const projectsData = await parseJson<Project[]>(projectsRes, []);
         const issuesData = await parseJson<Issue[] | { items?: Issue[] }>(
           issuesRes,
           []
@@ -257,17 +255,33 @@ export default function DashboardPage() {
         const scheduleData = await parseJson<
           ScheduleItem[] | { items?: ScheduleItem[] }
         >(scheduleRes, []);
-        const photosData = await parseJson<Photo[] | { items?: Photo[] }>(
-          photosRes,
-          []
-        );
 
-        setProject(projectData || null);
-        setIssues(Array.isArray(issuesData) ? issuesData : issuesData?.items || []);
-        setScheduleItems(
-          Array.isArray(scheduleData) ? scheduleData : scheduleData?.items || []
+        const activeProject = Array.isArray(projectsData)
+          ? projectsData.find((p) => p.id === pid) || null
+          : null;
+
+        const normalizedIssues = Array.isArray(issuesData)
+          ? issuesData
+          : issuesData?.items || [];
+
+        const normalizedSchedule = Array.isArray(scheduleData)
+          ? scheduleData
+          : scheduleData?.items || [];
+
+        setProject(activeProject);
+        setIssues(normalizedIssues);
+        setScheduleItems(normalizedSchedule);
+
+        setPhotos(
+          normalizedIssues
+            .filter((i) => i.latest_photo_path)
+            .map((i, index) => ({
+              id: i.id || `photo-${index}`,
+              url: i.latest_photo_path,
+              caption: i.title || i.description || "Issue photo",
+              created_at: i.updated_at || i.created_at,
+            }))
         );
-        setPhotos(Array.isArray(photosData) ? photosData : photosData?.items || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load dashboard.");
       } finally {
@@ -403,19 +417,19 @@ export default function DashboardPage() {
 
             <div className="flex flex-wrap gap-2">
               <Link
-                href={projectId ? `/projects/${projectId}/issues/new` : "#"}
+                href={projectId ? `/projects/${projectId}/punch` : "#"}
                 className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm"
               >
                 + Issue
               </Link>
               <Link
-                href={projectId ? `/projects/${projectId}/schedule/new` : "#"}
+                href={projectId ? `/projects/${projectId}/schedule` : "#"}
                 className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
               >
                 + Schedule
               </Link>
               <Link
-                href={projectId ? `/projects/${projectId}/photos` : "#"}
+                href={projectId ? `/projects/${projectId}/punch` : "#"}
                 className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
               >
                 + Photo
@@ -450,22 +464,22 @@ export default function DashboardPage() {
               <StatCard
                 label="Open Issues"
                 value={openIssues.length}
-                href={projectId ? `/projects/${projectId}/issues` : "#"}
+                href={projectId ? `/projects/${projectId}/punch` : "#"}
               />
               <StatCard
                 label="In Progress"
                 value={inProgressIssues.length}
-                href={projectId ? `/projects/${projectId}/issues` : "#"}
+                href={projectId ? `/projects/${projectId}/punch` : "#"}
               />
               <StatCard
                 label="Verified"
                 value={verifiedIssues.length}
-                href={projectId ? `/projects/${projectId}/issues` : "#"}
+                href={projectId ? `/projects/${projectId}/punch` : "#"}
               />
               <StatCard
                 label="Photos"
                 value={photos.length}
-                href={projectId ? `/projects/${projectId}/photos` : "#"}
+                href={projectId ? `/projects/${projectId}/punch` : "#"}
               />
             </section>
 
@@ -486,7 +500,7 @@ export default function DashboardPage() {
                     overdueIssues.length === 1 ? "" : "s"
                   }`}
                   tone={overdueIssues.length ? "danger" : "good"}
-                  href={projectId ? `/projects/${projectId}/issues` : "#"}
+                  href={projectId ? `/projects/${projectId}/punch` : "#"}
                 />
                 <AttentionRow
                   icon="📌"
@@ -494,7 +508,7 @@ export default function DashboardPage() {
                     dueTodayIssues.length === 1 ? "" : "s"
                   } due today`}
                   tone={dueTodayIssues.length ? "warn" : "good"}
-                  href={projectId ? `/projects/${projectId}/issues` : "#"}
+                  href={projectId ? `/projects/${projectId}/punch` : "#"}
                 />
                 <AttentionRow
                   icon="📅"
@@ -514,7 +528,7 @@ export default function DashboardPage() {
                     Recent Issues
                   </h2>
                   <Link
-                    href={projectId ? `/projects/${projectId}/issues` : "#"}
+                    href={projectId ? `/projects/${projectId}/punch` : "#"}
                     className="text-sm font-semibold text-slate-600 hover:text-slate-900"
                   >
                     View all →
@@ -528,7 +542,7 @@ export default function DashboardPage() {
                     recentIssues.map((issue, index) => (
                       <Link
                         key={issue.id || `issue-${index}`}
-                        href={projectId ? `/projects/${projectId}/issues` : "#"}
+                        href={projectId ? `/projects/${projectId}/punch` : "#"}
                         className="block rounded-xl border border-slate-200 p-4 transition hover:bg-slate-50"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -611,7 +625,7 @@ export default function DashboardPage() {
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-slate-900">Recent Photos</h2>
                 <Link
-                  href={projectId ? `/projects/${projectId}/photos` : "#"}
+                  href={projectId ? `/projects/${projectId}/punch` : "#"}
                   className="text-sm font-semibold text-slate-600 hover:text-slate-900"
                 >
                   View all →
@@ -633,7 +647,7 @@ export default function DashboardPage() {
                     return (
                       <Link
                         key={photo.id || `photo-${index}`}
-                        href={projectId ? `/projects/${projectId}/photos` : "#"}
+                        href={projectId ? `/projects/${projectId}/punch` : "#"}
                         className="group overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
                       >
                         {src ? (
@@ -665,25 +679,25 @@ export default function DashboardPage() {
 
           <div className="absolute bottom-16 right-0 w-48 space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
             <Link
-              href={projectId ? `/projects/${projectId}/issues/new` : "#"}
+              href={projectId ? `/projects/${projectId}/punch` : "#"}
               className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             >
               📸 New Issue
             </Link>
             <Link
-              href={projectId ? `/projects/${projectId}/schedule/new` : "#"}
+              href={projectId ? `/projects/${projectId}/schedule` : "#"}
               className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             >
               📅 New Schedule
             </Link>
             <Link
-              href={projectId ? `/projects/${projectId}/photos` : "#"}
+              href={projectId ? `/projects/${projectId}/punch` : "#"}
               className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             >
               📷 Add Photo
             </Link>
             <Link
-              href={projectId ? `/projects/${projectId}/daily-log/new` : "#"}
+              href="#"
               className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             >
               📝 Daily Log
