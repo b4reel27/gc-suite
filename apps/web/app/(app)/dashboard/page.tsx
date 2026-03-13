@@ -491,7 +491,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-5xl px-3 pb-24 pt-3 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl px-3 pb-32 pt-3 sm:px-6 lg:px-8">
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 sm:gap-4">
             <div>
@@ -506,19 +506,19 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               <Link
                 href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                className="rounded-xl bg-slate-900 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm"
+                className="w-full rounded-xl border border-slate-300 bg-slate-900 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm"
               >
                 + Issue
               </Link>
               <Link
                 href={projectId ? `/projects/${projectId}/schedule` : "#"}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Schedule
               </Link>
               <Link
                 href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Photo
               </Link>
@@ -768,7 +768,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="fixed bottom-5 right-5 z-30 md:hidden">
+      <div className="fixed bottom-3 right-3 z-30 md:hidden sm:bottom-5 sm:right-5">
         <details className="group relative">
           <summary className="flex h-14 w-14 cursor-pointer list-none items-center justify-center rounded-full bg-slate-900 text-2xl font-bold text-white shadow-lg">
             +
