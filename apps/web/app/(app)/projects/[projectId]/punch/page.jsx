@@ -37,13 +37,13 @@ function statusUpper(s) {
 function statusBadgeClass(status) {
   const s = statusUpper(status);
 
-  if (s === "OPEN") return "bg-amber-100 text-amber-800 border-amber-200";
-  if (s === "IN_PROGRESS") return "bg-blue-100 text-blue-800 border-blue-200";
-  if (s === "DONE") return "bg-purple-100 text-purple-800 border-purple-200";
-  if (s === "VERIFIED") return "bg-emerald-100 text-emerald-800 border-emerald-200";
-  if (s === "CLOSED") return "bg-slate-200 text-slate-700 border-slate-300";
+  if (s === "OPEN") return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+  if (s === "IN_PROGRESS") return "border-blue-500/30 bg-blue-500/10 text-blue-300";
+  if (s === "DONE") return "border-violet-500/30 bg-violet-500/10 text-violet-300";
+  if (s === "VERIFIED") return "border-cyan-500/30 bg-cyan-500/10 text-cyan-300";
+  if (s === "CLOSED") return "border-slate-600 bg-slate-800 text-slate-300";
 
-  return "bg-slate-100 text-slate-700 border-slate-200";
+  return "border-slate-700 bg-slate-900 text-slate-300";
 }
 
 function prettyStatus(status) {
@@ -52,12 +52,22 @@ function prettyStatus(status) {
 
 function StatCard({ title, value, subtext }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <div className="rounded-[24px] border border-slate-700 bg-black p-4 shadow-[0_0_0_1px_rgba(30,41,59,.18)]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
         {title}
       </div>
-      <div className="mt-2 text-2xl font-bold text-slate-900">{value}</div>
+      <div className="mt-2 text-2xl font-extrabold text-white">{value}</div>
       {subtext ? <div className="mt-1 text-xs text-slate-500">{subtext}</div> : null}
+    </div>
+  );
+}
+
+function Card({ children, className = "" }) {
+  return (
+    <div
+      className={`rounded-[28px] border border-slate-700 bg-black p-4 shadow-[0_0_0_1px_rgba(30,41,59,.18)] sm:p-5 ${className}`}
+    >
+      {children}
     </div>
   );
 }
@@ -113,7 +123,6 @@ function detectTrade(note) {
 
 function detectLocation(note) {
   const original = cleanSpaces(note);
-  const lower = original.toLowerCase();
 
   const directionalWall =
     /(north wall|south wall|east wall|west wall|front wall|rear wall|back wall)/i.exec(original);
@@ -222,6 +231,17 @@ function parseQuickIssueNote(note) {
   };
 }
 
+const fieldClass =
+  "mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/30";
+
+const labelClass = "text-xs font-semibold uppercase tracking-wide text-slate-400";
+
+const secondaryButtonClass =
+  "inline-flex items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:border-[#2563eb] hover:text-[#60a5fa]";
+
+const primaryButtonClass =
+  "inline-flex items-center justify-center rounded-2xl bg-[#1d4ed8] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#2563eb]";
+
 export default function PunchPage() {
   const { projectId } = useParams();
 
@@ -262,13 +282,23 @@ export default function PunchPage() {
   const [photoViewerPhotos, setPhotoViewerPhotos] = useState([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
 
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileEntryMode, setMobileEntryMode] = useState("quick");
+
   const apiBase = useMemo(() => getApiBase(), []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     const supported =
       !!window.SpeechRecognition || !!window.webkitSpeechRecognition;
     setSpeechSupported(supported);
+
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   useEffect(() => {
@@ -429,6 +459,7 @@ export default function PunchPage() {
     setNewTitle(quickParsingResult.title || "");
     setNewTrade(quickParsingResult.trade || "");
     setNewLocation(quickParsingResult.location || "");
+    if (isMobile) setMobileEntryMode("full");
   }
 
   async function startSpeechToText() {
@@ -653,19 +684,24 @@ export default function PunchPage() {
     return s === "VERIFIED";
   }
 
+  const showQuickAdd = iAmGC && (!isMobile || mobileEntryMode === "quick");
+  const showFullForm = iAmGC && (!isMobile || mobileEntryMode === "full");
+
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4 overflow-x-hidden">
       <ProjectHeader
         projectName={projectName || "Project"}
         location={projectLocation || ""}
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Field Issues</h1>
+        <div className="min-w-0">
+          <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-2xl">
+            Field Issues
+          </h1>
           {me?.role ? (
-            <p className="mt-1 text-sm text-slate-600">
-              Signed in as <span className="font-semibold text-slate-900">{me.role}</span>
+            <p className="mt-1 text-sm text-slate-400">
+              Signed in as <span className="font-semibold text-white">{me.role}</span>
             </p>
           ) : (
             <p className="mt-1 text-xs text-slate-500">
@@ -677,19 +713,19 @@ export default function PunchPage() {
         <button
           type="button"
           onClick={refreshIssues}
-          className="inline-flex w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+          className={`${secondaryButtonClass} w-full sm:w-auto`}
         >
           Refresh
         </button>
       </div>
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
           {error}
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
         <StatCard title="Total" value={stats.total} />
         <StatCard title="Open" value={stats.open} />
         <StatCard title="In Progress" value={stats.inProgress} />
@@ -698,30 +734,62 @@ export default function PunchPage() {
         <StatCard title="Photos" value={stats.photos} />
       </div>
 
-      {iAmGC ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3">
-            <h2 className="text-base font-semibold text-slate-900">Quick Add Issue</h2>
-            <p className="mt-1 text-sm text-slate-500">
+      {iAmGC && isMobile ? (
+        <Card className="p-3">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setMobileEntryMode("quick")}
+              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                mobileEntryMode === "quick"
+                  ? "bg-[#1d4ed8] text-white"
+                  : "border border-slate-700 bg-slate-950 text-slate-300"
+              }`}
+            >
+              Quick Add
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMobileEntryMode("full")}
+              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                mobileEntryMode === "full"
+                  ? "bg-[#1d4ed8] text-white"
+                  : "border border-slate-700 bg-slate-950 text-slate-300"
+              }`}
+            >
+              Full Form
+            </button>
+          </div>
+        </Card>
+      ) : null}
+
+      {showQuickAdd ? (
+        <Card>
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-white">Quick Add Issue</h2>
+            <p className="mt-1 text-sm text-slate-400">
               Take a photo, speak a note, and let GC Suite prefill the issue.
             </p>
           </div>
 
           <div className="grid gap-3">
             <div>
-              <label className="text-xs font-semibold text-slate-600">Quick Note</label>
+              <label className={labelClass}>Quick Note</label>
               <textarea
                 value={quickNote}
                 onChange={(e) => setQuickNote(e.target.value)}
                 rows={3}
                 placeholder='Example: "Paint touch up north wall room 103"'
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+                className={fieldClass}
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50">
-                <span>{quickPhotoName ? `Photo: ${quickPhotoName}` : "Take / Add Photo"}</span>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <label className={`${secondaryButtonClass} cursor-pointer`}>
+                <span className="truncate">
+                  {quickPhotoName ? `Photo: ${quickPhotoName}` : "Take / Add Photo"}
+                </span>
                 <input
                   type="file"
                   accept="image/*"
@@ -739,7 +807,7 @@ export default function PunchPage() {
                 type="button"
                 onClick={startSpeechToText}
                 disabled={!speechSupported || isListening}
-                className={`rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 ${
+                className={`${secondaryButtonClass} ${
                   !speechSupported || isListening ? "cursor-not-allowed opacity-50" : ""
                 }`}
               >
@@ -754,46 +822,46 @@ export default function PunchPage() {
                   setQuickPhotoName("");
                   setQuickParsingResult({ title: "", trade: "", location: "" });
                 }}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                className={secondaryButtonClass}
               >
                 Clear
               </button>
             </div>
 
             <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                   Detected Title
                 </div>
-                <div className="mt-2 text-sm font-medium text-slate-900">
+                <div className="mt-2 text-sm font-semibold text-white">
                   {quickParsingResult.title || "—"}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                   Detected Trade
                 </div>
-                <div className="mt-2 text-sm font-medium text-slate-900">
+                <div className="mt-2 text-sm font-semibold text-white">
                   {quickParsingResult.trade || "—"}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                   Detected Location
                 </div>
-                <div className="mt-2 text-sm font-medium text-slate-900">
+                <div className="mt-2 text-sm font-semibold text-white">
                   {quickParsingResult.location || "—"}
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={applyQuickParseToForm}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                className={`${secondaryButtonClass} w-full sm:w-auto`}
               >
                 Apply to Full Form
               </button>
@@ -802,7 +870,7 @@ export default function PunchPage() {
                 type="button"
                 onClick={quickCreateIssue}
                 disabled={quickAddBusy}
-                className={`rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:opacity-90 ${
+                className={`${primaryButtonClass} w-full sm:w-auto ${
                   quickAddBusy ? "cursor-not-allowed opacity-50" : ""
                 }`}
               >
@@ -810,99 +878,95 @@ export default function PunchPage() {
               </button>
             </div>
           </div>
-        </div>
+        </Card>
       ) : null}
 
-      {iAmGC ? (
-        <form
-          onSubmit={addIssue}
-          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-        >
-          <div className="mb-3">
-            <h2 className="text-base font-semibold text-slate-900">Add Field Issue</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Fast entry for supers and PMs in the field.
-            </p>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="md:col-span-2">
-              <label className="text-xs font-semibold text-slate-600">Title</label>
-              <input
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="Example: Caulk around windows at rear elevation"
-                required
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-              />
+      {showFullForm ? (
+        <form onSubmit={addIssue}>
+          <Card>
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-white">Add Field Issue</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Fast entry for supers and PMs in the field.
+              </p>
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-slate-600">Trade</label>
-              <input
-                value={newTrade}
-                onChange={(e) => setNewTrade(e.target.value)}
-                placeholder="Example: Finish / Glazing / Electrical"
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-              />
-            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className={labelClass}>Title</label>
+                <input
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="Example: Caulk around windows at rear elevation"
+                  required
+                  className={fieldClass}
+                />
+              </div>
 
-            <div>
-              <label className="text-xs font-semibold text-slate-600">Location</label>
-              <input
-                value={newLocation}
-                onChange={(e) => setNewLocation(e.target.value)}
-                placeholder="Example: Sales floor, north wall"
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-              />
-            </div>
+              <div>
+                <label className={labelClass}>Trade</label>
+                <input
+                  value={newTrade}
+                  onChange={(e) => setNewTrade(e.target.value)}
+                  placeholder="Example: Finish / Glazing / Electrical"
+                  className={fieldClass}
+                />
+              </div>
 
-            <div className="md:col-span-2">
-              <label className="text-xs font-semibold text-slate-600">
-                Assigned Company (optional)
-              </label>
-              <select
-                value={newCompanyId}
-                onChange={(e) => setNewCompanyId(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
-              >
-                <option value="">Unassigned</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div>
+                <label className={labelClass}>Location</label>
+                <input
+                  value={newLocation}
+                  onChange={(e) => setNewLocation(e.target.value)}
+                  placeholder="Example: Sales floor, north wall"
+                  className={fieldClass}
+                />
+              </div>
 
-            <div className="md:col-span-2 flex justify-end">
-              <button
-                type="submit"
-                className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
-              >
-                + Add Issue
-              </button>
+              <div className="md:col-span-2">
+                <label className={labelClass}>Assigned Company (optional)</label>
+                <select
+                  value={newCompanyId}
+                  onChange={(e) => setNewCompanyId(e.target.value)}
+                  className={fieldClass}
+                >
+                  <option value="">Unassigned</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2 flex">
+                <button type="submit" className={`${primaryButtonClass} w-full sm:w-auto`}>
+                  + Add Issue
+                </button>
+              </div>
             </div>
-          </div>
+          </Card>
         </form>
-      ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-          Field issues can be updated here, but only GC users can create new issues.
-        </div>
-      )}
+      ) : null}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3">
-          <h2 className="text-base font-semibold text-slate-900">Filter Issues</h2>
+      {!iAmGC ? (
+        <Card className="text-sm text-slate-300">
+          Field issues can be updated here, but only GC users can create new issues.
+        </Card>
+      ) : null}
+
+      <Card>
+        <div className="mb-4">
+          <h2 className="text-lg font-bold text-white">Filter Issues</h2>
         </div>
 
         <div className="grid gap-3 md:grid-cols-4">
           <div>
-            <label className="text-xs font-semibold text-slate-600">Status</label>
+            <label className={labelClass}>Status</label>
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+              className={fieldClass}
             >
               <option value="ALL">ALL</option>
               <option value="OPEN">OPEN</option>
@@ -914,21 +978,21 @@ export default function PunchPage() {
           </div>
 
           <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-slate-600">Search</label>
+            <label className={labelClass}>Search</label>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search title, trade, location, creator..."
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+              className={fieldClass}
             />
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-600">Trade Filter</label>
+            <label className={labelClass}>Trade Filter</label>
             <select
               value={trade}
               onChange={(e) => setTrade(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+              className={fieldClass}
             >
               <option value="">All Trades</option>
               {tradeOptions.map((t) => (
@@ -939,7 +1003,7 @@ export default function PunchPage() {
             </select>
           </div>
         </div>
-      </div>
+      </Card>
 
       <div className="space-y-3">
         {filtered.map((it) => {
@@ -949,15 +1013,12 @@ export default function PunchPage() {
           const assignedCompanyName = getAssignedCompanyName(it);
 
           return (
-            <div
-              key={it.id}
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-            >
+            <Card key={it.id}>
               <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base font-semibold text-slate-900">{it.title}</h3>
+                      <h3 className="text-lg font-bold text-white">{it.title}</h3>
                       <span
                         className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(
                           s
@@ -967,29 +1028,27 @@ export default function PunchPage() {
                       </span>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-600">
+                    <div className="mt-3 grid gap-2 text-sm text-slate-400 sm:grid-cols-2 xl:grid-cols-3">
                       <span>
-                        Trade: <span className="font-medium text-slate-900">{it.trade || "—"}</span>
+                        Trade: <span className="font-semibold text-white">{it.trade || "—"}</span>
                       </span>
                       <span>
                         Location:{" "}
-                        <span className="font-medium text-slate-900">{it.location || "—"}</span>
+                        <span className="font-semibold text-white">{it.location || "—"}</span>
                       </span>
                       <span>
                         Created By:{" "}
-                        <span className="font-medium text-slate-900">
+                        <span className="font-semibold text-white">
                           {it.created_by_name || "—"}
                         </span>
                       </span>
                       <span>
-                        Photos: <span className="font-medium text-slate-900">{photoCount}</span>
+                        Photos: <span className="font-semibold text-white">{photoCount}</span>
                       </span>
                       {assignedCompanyName ? (
                         <span>
                           Assigned:{" "}
-                          <span className="font-medium text-slate-900">
-                            {assignedCompanyName}
-                          </span>
+                          <span className="font-semibold text-white">{assignedCompanyName}</span>
                         </span>
                       ) : null}
                     </div>
@@ -999,7 +1058,7 @@ export default function PunchPage() {
                     <div className="flex shrink-0">
                       <button
                         onClick={() => deleteIssue(it.id)}
-                        className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 hover:bg-red-100"
+                        className="inline-flex items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/20"
                         type="button"
                       >
                         Delete
@@ -1015,7 +1074,7 @@ export default function PunchPage() {
                       onClick={() =>
                         window.open(latestPhotoUrl, "_blank", "noopener,noreferrer")
                       }
-                      className="overflow-hidden rounded-xl border border-slate-200 hover:opacity-90"
+                      className="overflow-hidden rounded-2xl border border-slate-700"
                       title="Open latest photo"
                     >
                       <img
@@ -1028,7 +1087,7 @@ export default function PunchPage() {
                     <button
                       type="button"
                       onClick={() => openPhotoViewer(it.id, it.title)}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                      className={secondaryButtonClass}
                     >
                       View Photos
                     </button>
@@ -1038,7 +1097,7 @@ export default function PunchPage() {
                     <button
                       type="button"
                       onClick={() => openPhotoViewer(it.id, it.title)}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                      className={secondaryButtonClass}
                     >
                       View Photos
                     </button>
@@ -1046,7 +1105,7 @@ export default function PunchPage() {
                 ) : null}
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50">
+                  <label className={`${secondaryButtonClass} cursor-pointer`}>
                     <span>{uploading[it.id] ? "Uploading..." : "Add Photo"}</span>
                     <input
                       type="file"
@@ -1060,11 +1119,11 @@ export default function PunchPage() {
                   </label>
                 </div>
 
-                <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-3">
                   <button
                     onClick={() => setStatus(it.id, "start")}
                     disabled={!canStart(s) || !!savingStatus[it.id]}
-                    className={`rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 ${
+                    className={`${secondaryButtonClass} ${
                       !canStart(s) || savingStatus[it.id] ? "cursor-not-allowed opacity-40" : ""
                     }`}
                     type="button"
@@ -1075,7 +1134,7 @@ export default function PunchPage() {
                   <button
                     onClick={() => setStatus(it.id, "complete")}
                     disabled={!canDone(s) || !!savingStatus[it.id]}
-                    className={`rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 ${
+                    className={`${secondaryButtonClass} ${
                       !canDone(s) || savingStatus[it.id] ? "cursor-not-allowed opacity-40" : ""
                     }`}
                     type="button"
@@ -1086,7 +1145,7 @@ export default function PunchPage() {
                   <button
                     onClick={() => setStatus(it.id, "verify")}
                     disabled={!iAmGC || !canVerify(s) || !!savingStatus[it.id]}
-                    className={`rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 ${
+                    className={`${secondaryButtonClass} ${
                       !iAmGC || !canVerify(s) || savingStatus[it.id]
                         ? "cursor-not-allowed opacity-40"
                         : ""
@@ -1100,7 +1159,7 @@ export default function PunchPage() {
                   <button
                     onClick={() => setStatus(it.id, "close")}
                     disabled={!iAmGC || !canClose(s) || !!savingStatus[it.id]}
-                    className={`rounded-xl bg-slate-900 px-3 py-2 text-sm text-white hover:opacity-90 ${
+                    className={`${primaryButtonClass} ${
                       !iAmGC || !canClose(s) || savingStatus[it.id]
                         ? "cursor-not-allowed opacity-40"
                         : ""
@@ -1112,24 +1171,22 @@ export default function PunchPage() {
                   </button>
                 </div>
               </div>
-            </div>
+            </Card>
           );
         })}
 
         {!filtered.length ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
-            No issues match your filters.
-          </div>
+          <Card className="text-sm text-slate-300">No issues match your filters.</Card>
         ) : null}
       </div>
 
       {photoViewerOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <div>
-                <div className="text-base font-semibold text-slate-900">{photoViewerTitle}</div>
-                <div className="text-xs text-slate-500">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[28px] border border-slate-700 bg-black shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+              <div className="min-w-0">
+                <div className="truncate text-base font-bold text-white">{photoViewerTitle}</div>
+                <div className="text-xs text-slate-400">
                   {loadingPhotos ? "Loading photos..." : `${photoViewerPhotos.length} photo(s)`}
                 </div>
               </div>
@@ -1137,7 +1194,7 @@ export default function PunchPage() {
               <button
                 type="button"
                 onClick={() => setPhotoViewerOpen(false)}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50"
+                className={secondaryButtonClass}
               >
                 Close
               </button>
@@ -1145,7 +1202,7 @@ export default function PunchPage() {
 
             <div className="max-h-[75vh] overflow-y-auto p-4">
               {loadingPhotos ? (
-                <div className="text-sm text-slate-600">Loading photos...</div>
+                <div className="text-sm text-slate-300">Loading photos...</div>
               ) : photoViewerPhotos.length ? (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {photoViewerPhotos.map((photo) => {
@@ -1157,7 +1214,7 @@ export default function PunchPage() {
                         href={url}
                         target="_blank"
                         rel="noreferrer"
-                        className="block overflow-hidden rounded-2xl border border-slate-200 bg-white hover:shadow-md"
+                        className="block overflow-hidden rounded-[24px] border border-slate-700 bg-slate-950 transition hover:border-[#2563eb]"
                       >
                         <img
                           src={url}
@@ -1165,10 +1222,10 @@ export default function PunchPage() {
                           className="h-48 w-full object-cover"
                         />
                         <div className="p-3">
-                          <div className="truncate text-sm font-medium text-slate-900">
+                          <div className="truncate text-sm font-semibold text-white">
                             {photo.original_name || "Photo"}
                           </div>
-                          <div className="mt-1 text-xs text-slate-500">
+                          <div className="mt-1 text-xs text-slate-400">
                             {photo.created_at
                               ? new Date(photo.created_at).toLocaleString()
                               : ""}
@@ -1179,7 +1236,7 @@ export default function PunchPage() {
                   })}
                 </div>
               ) : (
-                <div className="text-sm text-slate-600">No photos found for this issue.</div>
+                <div className="text-sm text-slate-300">No photos found for this issue.</div>
               )}
             </div>
           </div>
