@@ -7,6 +7,7 @@ const tabs = [
   { label: "Plans", path: "plans" },
   { label: "Issues", path: "punch" },
   { label: "Schedule", path: "schedule" },
+  { label: "Daily Log", path: "daily-log" },
   { label: "RFI", path: "rfi" },
   { label: "Submittals", path: "submittals" },
 ];
@@ -20,20 +21,20 @@ export default function ProjectHeader({ projectName, location }) {
   }
 
   return (
-    <div className="mb-4 overflow-hidden rounded-[28px] border border-slate-700 bg-black shadow-[0_0_0_1px_rgba(30,41,59,.2)]">
-      <div className="flex flex-col gap-3 border-b border-slate-800 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+    <div className="mb-4 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="min-w-0">
-          <div className="truncate text-2xl font-extrabold tracking-tight text-white sm:text-xl">
+          <div className="truncate text-2xl font-extrabold tracking-tight text-slate-900 sm:text-xl">
             {projectName || "Project"}
           </div>
           {location ? (
-            <div className="mt-1 text-sm text-slate-400">{location}</div>
+            <div className="mt-1 text-sm text-slate-500">{location}</div>
           ) : null}
         </div>
 
         <Link
           href="/projects"
-          className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-600 bg-black px-4 py-3 text-base font-semibold text-[#3b82f6] transition hover:border-[#2563eb] hover:text-[#60a5fa] sm:w-auto sm:text-sm"
+          className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 sm:w-auto sm:text-sm"
         >
           Change Project
         </Link>
@@ -48,10 +49,10 @@ export default function ProjectHeader({ projectName, location }) {
               <Link
                 key={tab.path}
                 href={`/projects/${projectId}/${tab.path}`}
-                className={`rounded-2xl px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition ${
+                className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition ${
                   active
-                    ? "bg-[#1d4ed8] text-white"
-                    : "border border-slate-700 bg-black text-[#3b82f6] hover:border-[#2563eb] hover:text-[#60a5fa]"
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
                 {tab.label}

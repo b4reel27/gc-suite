@@ -130,7 +130,11 @@ function statusPillTone(status?: string) {
 
 function normalizeArrayResponse<T>(data: unknown): T[] {
   if (Array.isArray(data)) return data as T[];
-  if (data && typeof data === "object" && Array.isArray((data as { items?: T[] }).items)) {
+  if (
+    data &&
+    typeof data === "object" &&
+    Array.isArray((data as { items?: T[] }).items)
+  ) {
     return (data as { items?: T[] }).items || [];
   }
   return [];
@@ -192,7 +196,7 @@ function StatCard({
       <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-[11px]">
         {label}
       </div>
-      <div className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">{value}</div>
+      <div className="mt-1 text-lg font-bold text-slate-900 sm:text-2xl">{value}</div>
     </div>
   );
 
@@ -213,12 +217,12 @@ function AttentionRow({
 }) {
   const row = (
     <div
-      className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-3 sm:px-4 ${cardTone(
+      className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-3 ${cardTone(
         tone
       )}`}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <span className="text-base sm:text-lg">{icon}</span>
+        <span className="text-base">{icon}</span>
         <span className="text-sm font-medium">{text}</span>
       </div>
       <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide opacity-70">
@@ -252,7 +256,11 @@ function SectionHeader({
     <div className="mb-3 flex items-start justify-between gap-3 sm:mb-4">
       <div className="min-w-0">
         <h2 className="text-base font-bold text-slate-900 sm:text-lg">{title}</h2>
-        {subtitle ? <div className="mt-0.5 text-[11px] text-slate-500 sm:text-xs">{subtitle}</div> : null}
+        {subtitle ? (
+          <div className="mt-0.5 text-[11px] text-slate-500 sm:text-xs">
+            {subtitle}
+          </div>
+        ) : null}
       </div>
       {href ? (
         <Link
@@ -457,7 +465,7 @@ export default function DashboardPage() {
         return da - db;
       })
       .slice(0, 5);
-  }, [scheduleItems]);
+  }, [scheduleItems, now]);
 
   const recentIssues = useMemo(() => {
     return [...issues]
@@ -492,40 +500,40 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-5xl px-3 pb-32 pt-3 sm:px-6 lg:px-8">
-        <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <div className="flex flex-col gap-3 sm:gap-4">
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+      <div className="mx-auto max-w-5xl px-3 pb-32 pt-2 sm:px-6 sm:pt-4 lg:px-8">
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+          <div className="flex flex-col gap-3">
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-2xl">
                 {projectName}
               </h1>
-              <div className="mt-1 text-sm text-slate-500">
+              <div className="mt-0.5 truncate text-sm text-slate-500">
                 {projectLocation || "Active project"}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <div className="grid grid-cols-2 gap-2">
               <Link
                 href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                className="w-full rounded-xl border border-slate-300 bg-slate-900 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm"
+                className="rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm"
               >
                 + Issue
               </Link>
               <Link
                 href={projectId ? `/projects/${projectId}/schedule` : "#"}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Schedule
               </Link>
               <Link
                 href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Photo
               </Link>
               <Link
                 href={projectId ? `/projects/${projectId}/daily-log` : "#"}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Daily Log
               </Link>
@@ -535,16 +543,16 @@ export default function DashboardPage() {
 
         {loading ? (
           <div className="space-y-4">
-            <div className="h-32 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+            <div className="h-28 animate-pulse rounded-2xl border border-slate-200 bg-white" />
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="h-52 animate-pulse rounded-2xl border border-slate-200 bg-white" />
-              <div className="h-52 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+              <div className="h-44 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+              <div className="h-44 animate-pulse rounded-2xl border border-slate-200 bg-white" />
             </div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               {[1, 2, 3, 4].map((n) => (
                 <div
                   key={n}
-                  className="h-18 animate-pulse rounded-xl border border-slate-200 bg-white"
+                  className="h-16 animate-pulse rounded-xl border border-slate-200 bg-white"
                 />
               ))}
             </div>
@@ -556,13 +564,16 @@ export default function DashboardPage() {
         ) : (
           <div className="space-y-4 sm:space-y-5">
             <SectionShell>
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Needs Attention</h2>
+                  <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
+                    Needs Attention
+                  </h2>
                   <div className="mt-0.5 text-sm text-slate-500">
                     {allClear ? "All clear right now" : "Action now"}
                   </div>
                 </div>
+
                 {allClear ? (
                   <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
                     Clear
@@ -618,21 +629,22 @@ export default function DashboardPage() {
                       <Link
                         key={issue.id || `issue-${index}`}
                         href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                        className="block rounded-xl border border-slate-300 bg-slate-50 p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-white hover:shadow-md"
+                        className="block rounded-xl border border-slate-300 bg-slate-50 p-3 shadow-sm transition hover:-translate-y-[1px] hover:bg-white hover:shadow-md"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="line-clamp-2 font-semibold text-slate-900">
+                            <div className="line-clamp-2 text-sm font-semibold text-slate-900 sm:text-base">
                               {issue.title || issue.description || "Untitled issue"}
                             </div>
-                            <div className="mt-1 text-sm text-slate-500">
+                            <div className="mt-1 text-xs text-slate-500 sm:text-sm">
                               {[issue.location, issue.trade]
                                 .filter(Boolean)
                                 .join(" • ") || "No location set"}
                             </div>
                           </div>
+
                           <div
-                            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${statusPillTone(
+                            className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ring-1 sm:text-[11px] ${statusPillTone(
                               issue.status || "OPEN"
                             )}`}
                           >
@@ -640,7 +652,7 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                        <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 sm:text-xs">
                           <span>Due: {fmtDate(issue.due_date)}</span>
                           <span>{fmtDate(issue.updated_at || issue.created_at)}</span>
                         </div>
@@ -669,20 +681,21 @@ export default function DashboardPage() {
                         <Link
                           key={item.id || `schedule-${index}`}
                           href={projectId ? `/projects/${projectId}/schedule` : "#"}
-                          className="block rounded-xl border border-slate-300 bg-slate-50 p-4 shadow-sm transition hover:-translate-y-[1px] hover:bg-white hover:shadow-md"
+                          className="block rounded-xl border border-slate-300 bg-slate-50 p-3 shadow-sm transition hover:-translate-y-[1px] hover:bg-white hover:shadow-md"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="line-clamp-2 font-semibold text-slate-900">
+                              <div className="line-clamp-2 text-sm font-semibold text-slate-900 sm:text-base">
                                 {item.title || item.name || "Untitled schedule item"}
                               </div>
-                              <div className="mt-1 text-sm text-slate-500">
+                              <div className="mt-1 text-xs text-slate-500 sm:text-sm">
                                 {[item.location, item.assigned_company]
                                   .filter(Boolean)
                                   .join(" • ") || "No location set"}
                               </div>
                             </div>
-                            <div className="shrink-0 text-right text-xs font-semibold text-slate-500">
+
+                            <div className="shrink-0 text-right text-[11px] font-semibold text-slate-500 sm:text-xs">
                               <div>{fmtDate(raw)}</div>
                               <div>{fmtTime(raw)}</div>
                             </div>
@@ -758,10 +771,10 @@ export default function DashboardPage() {
                           <img
                             src={src}
                             alt={photo.caption || "Project photo"}
-                            className="h-28 w-full object-cover transition duration-200 group-hover:scale-[1.02] sm:h-32"
+                            className="h-24 w-full object-cover transition duration-200 group-hover:scale-[1.02] sm:h-32"
                           />
                         ) : (
-                          <div className="flex h-28 items-center justify-center text-sm text-slate-400 sm:h-32">
+                          <div className="flex h-24 items-center justify-center text-sm text-slate-400 sm:h-32">
                             No preview
                           </div>
                         )}
