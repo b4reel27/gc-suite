@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import MobileQuickActions from "../../../components/MobileQuickActions";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const ISSUE_ROUTE = "punch";
@@ -522,6 +523,12 @@ export default function DashboardPage() {
               >
                 + Photo
               </Link>
+              <Link
+                href={projectId ? `/projects/${projectId}/daily-log` : "#"}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
+              >
+                + Daily Log
+              </Link>
             </div>
           </div>
         </div>
@@ -768,40 +775,31 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="fixed bottom-3 right-3 z-30 md:hidden sm:bottom-5 sm:right-5">
-        <details className="group relative">
-          <summary className="flex h-14 w-14 cursor-pointer list-none items-center justify-center rounded-full bg-slate-900 text-2xl font-bold text-white shadow-lg">
-            +
-          </summary>
-
-          <div className="absolute bottom-16 right-0 w-48 space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
-            <Link
-              href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-              className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              📸 New Issue
-            </Link>
-            <Link
-              href={projectId ? `/projects/${projectId}/schedule` : "#"}
-              className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              📅 New Schedule
-            </Link>
-            <Link
-              href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-              className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              📷 Add Photo
-            </Link>
-            <Link
-              href="#"
-              className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              📝 Daily Log
-            </Link>
-          </div>
-        </details>
-      </div>
+      <MobileQuickActions
+        actions={[
+          {
+            label: "New Issue",
+            icon: "📸",
+            href: projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#",
+          },
+          {
+            label: "New Schedule",
+            icon: "📅",
+            href: projectId ? `/projects/${projectId}/schedule` : "#",
+          },
+          {
+            label: "Add Photo",
+            icon: "📷",
+            href: projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#",
+          },
+          {
+            label: "Daily Log",
+            icon: "📝",
+            href: projectId ? `/projects/${projectId}/daily-log` : "#",
+          },
+        ]}
+        inset="bottom-5 right-4"
+      />
     </div>
   );
 }
