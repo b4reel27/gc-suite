@@ -36,7 +36,7 @@ export default function ProjectHeader({ projectName, location }) {
           href="/projects"
           className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 sm:w-auto sm:text-sm"
         >
-          Change Project
+          <span className="!text-slate-700">Change Project</span>
         </Link>
       </div>
 
@@ -49,13 +49,16 @@ export default function ProjectHeader({ projectName, location }) {
               <Link
                 key={tab.path}
                 href={`/projects/${projectId}/${tab.path}`}
+                aria-current={active ? "page" : undefined}
                 className={`inline-flex min-h-[44px] items-center justify-center rounded-2xl border px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition focus:outline-none focus:ring-2 focus:ring-slate-300 ${
                   active
-                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                    ? "border-slate-900 bg-slate-900 shadow-sm"
+                    : "border-slate-200 bg-white hover:bg-slate-50"
                 }`}
               >
-                {tab.label}
+                <span className={active ? "!text-white" : "!text-slate-700"}>
+                  {tab.label}
+                </span>
               </Link>
             );
           })}
