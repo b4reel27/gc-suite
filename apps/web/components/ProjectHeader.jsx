@@ -49,15 +49,13 @@ export default function ProjectHeader({ projectName, location }) {
               <Link
                 key={tab.path}
                 href={`/projects/${projectId}/${tab.path}`}
-                className={`inline-flex min-h-[44px] items-center justify-center rounded-2xl border px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition ${
+                className={`inline-flex min-h-[44px] items-center justify-center rounded-2xl border px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition focus:outline-none focus:ring-2 focus:ring-slate-300 ${
                   active
-                    ? "border-slate-900 bg-slate-900"
-                    : "border-slate-200 bg-white hover:bg-slate-50"
+                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                <span className={active ? "text-white" : "text-slate-700"}>
-                  {tab.label}
-                </span>
+                {tab.label}
               </Link>
             );
           })}

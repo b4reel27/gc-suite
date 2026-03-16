@@ -265,12 +265,50 @@ function SectionHeader({
       {href ? (
         <Link
           href={href}
-          className="shrink-0 text-xs font-semibold text-slate-600 transition hover:text-slate-900 sm:text-sm"
+          className="shrink-0 text-xs font-semibold text-slate-600 transition hover:text-slate-900"
         >
           View all →
         </Link>
       ) : null}
     </div>
+  );
+}
+
+function DarkPrimaryLink({
+  href,
+  children,
+  className = "",
+}: {
+  href: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`inline-flex items-center justify-center rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 ${className}`}
+    >
+      <span className="text-white">{children}</span>
+    </Link>
+  );
+}
+
+function LightSecondaryLink({
+  href,
+  children,
+  className = "",
+}: {
+  href: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 ${className}`}
+    >
+      <span className="text-inherit">{children}</span>
+    </Link>
   );
 }
 
@@ -513,30 +551,29 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <Link
+              <DarkPrimaryLink
                 href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                className="rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm"
               >
                 + Issue
-              </Link>
-              <Link
+              </DarkPrimaryLink>
+
+              <LightSecondaryLink
                 href={projectId ? `/projects/${projectId}/schedule` : "#"}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Schedule
-              </Link>
-              <Link
+              </LightSecondaryLink>
+
+              <LightSecondaryLink
                 href={projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#"}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Photo
-              </Link>
-              <Link
+              </LightSecondaryLink>
+
+              <LightSecondaryLink
                 href={projectId ? `/projects/${projectId}/daily-log` : "#"}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700"
               >
                 + Daily Log
-              </Link>
+              </LightSecondaryLink>
             </div>
           </div>
         </div>
