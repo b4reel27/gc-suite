@@ -34,39 +34,38 @@ function statusUpper(s) {
   return String(s || "").toUpperCase();
 }
 
-function statusBadgeClass(status) {
-  const s = statusUpper(status);
-
-  if (s === "OPEN") return "border-amber-500/30 bg-amber-500/10 text-amber-300";
-  if (s === "IN_PROGRESS") return "border-blue-500/30 bg-blue-500/10 text-blue-300";
-  if (s === "DONE") return "border-violet-500/30 bg-violet-500/10 text-violet-300";
-  if (s === "VERIFIED") return "border-cyan-500/30 bg-cyan-500/10 text-cyan-300";
-  if (s === "CLOSED") return "border-slate-600 bg-slate-800 text-slate-300";
-
-  return "border-slate-700 bg-slate-900 text-slate-300";
-}
-
 function prettyStatus(status) {
   return statusUpper(status).replaceAll("_", " ");
 }
 
-function StatCard({ title, value, subtext }) {
+function statusBadgeClass(status) {
+  const s = statusUpper(status);
+
+  if (s === "OPEN") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (s === "IN_PROGRESS") return "border-blue-200 bg-blue-50 text-blue-700";
+  if (s === "DONE") return "border-violet-200 bg-violet-50 text-violet-700";
+  if (s === "VERIFIED") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (s === "CLOSED") return "border-slate-200 bg-slate-100 text-slate-700";
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function StatCard({ title, value }) {
   return (
-    <div className="rounded-[24px] border border-slate-700 bg-black p-4 shadow-[0_0_0_1px_rgba(30,41,59,.18)]">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+    <div className="rounded-[24px] border border-black/10 bg-white p-4 shadow-sm">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
         {title}
       </div>
-      <div className="mt-2 text-2xl font-extrabold text-white">{value}</div>
-      {subtext ? <div className="mt-1 text-xs text-slate-500">{subtext}</div> : null}
+      <div className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
+        {value}
+      </div>
     </div>
   );
 }
 
 function Card({ children, className = "" }) {
   return (
-    <div
-      className={`rounded-[28px] border border-slate-700 bg-black p-4 shadow-[0_0_0_1px_rgba(30,41,59,.18)] sm:p-5 ${className}`}
-    >
+    <div className={`rounded-[28px] border border-black/10 bg-white p-4 shadow-sm sm:p-5 ${className}`}>
       {children}
     </div>
   );
@@ -232,15 +231,15 @@ function parseQuickIssueNote(note) {
 }
 
 const fieldClass =
-  "mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/30";
+  "mt-1 w-full rounded-2xl border border-black/10 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
 
-const labelClass = "text-xs font-semibold uppercase tracking-wide text-slate-400";
+const labelClass = "text-xs font-semibold uppercase tracking-wide text-slate-500";
 
 const secondaryButtonClass =
-  "inline-flex items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:border-[#2563eb] hover:text-[#60a5fa]";
+  "inline-flex items-center justify-center rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50";
 
 const primaryButtonClass =
-  "inline-flex items-center justify-center rounded-2xl bg-[#1d4ed8] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#2563eb]";
+  "inline-flex items-center justify-center rounded-2xl bg-[#0b1220] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#162033]";
 
 export default function PunchPage() {
   const { projectId } = useParams();
@@ -696,15 +695,15 @@ export default function PunchPage() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-2xl">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">
             Field Issues
           </h1>
           {me?.role ? (
-            <p className="mt-1 text-sm text-slate-400">
-              Signed in as <span className="font-semibold text-white">{me.role}</span>
+            <p className="mt-1 text-sm text-slate-500">
+              Role: <span className="font-semibold text-slate-900">{me.role}</span>
             </p>
           ) : (
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-400">
               API: <span className="font-mono">{apiBase}</span>
             </p>
           )}
@@ -720,7 +719,7 @@ export default function PunchPage() {
       </div>
 
       {error ? (
-        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
         </div>
       ) : null}
@@ -742,8 +741,8 @@ export default function PunchPage() {
               onClick={() => setMobileEntryMode("quick")}
               className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 mobileEntryMode === "quick"
-                  ? "bg-[#1d4ed8] text-white"
-                  : "border border-slate-700 bg-slate-950 text-slate-300"
+                  ? "bg-[#0b1220] text-white"
+                  : "border border-black/10 bg-white text-slate-700"
               }`}
             >
               Quick Add
@@ -754,8 +753,8 @@ export default function PunchPage() {
               onClick={() => setMobileEntryMode("full")}
               className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                 mobileEntryMode === "full"
-                  ? "bg-[#1d4ed8] text-white"
-                  : "border border-slate-700 bg-slate-950 text-slate-300"
+                  ? "bg-[#0b1220] text-white"
+                  : "border border-black/10 bg-white text-slate-700"
               }`}
             >
               Full Form
@@ -767,9 +766,9 @@ export default function PunchPage() {
       {showQuickAdd ? (
         <Card>
           <div className="mb-4">
-            <h2 className="text-lg font-bold text-white">Quick Add Issue</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Take a photo, speak a note, and let GC Suite prefill the issue.
+            <h2 className="text-lg font-bold text-slate-900">Quick Add Issue</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Speak or type a field note and let GC Suite prefill the issue.
             </p>
           </div>
 
@@ -829,29 +828,29 @@ export default function PunchPage() {
             </div>
 
             <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              <div className="rounded-2xl border border-black/10 bg-slate-50 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Detected Title
                 </div>
-                <div className="mt-2 text-sm font-semibold text-white">
+                <div className="mt-2 text-sm font-semibold text-slate-900">
                   {quickParsingResult.title || "—"}
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              <div className="rounded-2xl border border-black/10 bg-slate-50 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Detected Trade
                 </div>
-                <div className="mt-2 text-sm font-semibold text-white">
+                <div className="mt-2 text-sm font-semibold text-slate-900">
                   {quickParsingResult.trade || "—"}
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              <div className="rounded-2xl border border-black/10 bg-slate-50 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Detected Location
                 </div>
-                <div className="mt-2 text-sm font-semibold text-white">
+                <div className="mt-2 text-sm font-semibold text-slate-900">
                   {quickParsingResult.location || "—"}
                 </div>
               </div>
@@ -885,8 +884,8 @@ export default function PunchPage() {
         <form onSubmit={addIssue}>
           <Card>
             <div className="mb-4">
-              <h2 className="text-lg font-bold text-white">Add Field Issue</h2>
-              <p className="mt-1 text-sm text-slate-400">
+              <h2 className="text-lg font-bold text-slate-900">Add Field Issue</h2>
+              <p className="mt-1 text-sm text-slate-500">
                 Fast entry for supers and PMs in the field.
               </p>
             </div>
@@ -950,14 +949,14 @@ export default function PunchPage() {
       ) : null}
 
       {!iAmGC ? (
-        <Card className="text-sm text-slate-300">
+        <Card className="text-sm text-slate-600">
           Field issues can be updated here, but only GC users can create new issues.
         </Card>
       ) : null}
 
       <Card>
         <div className="mb-4">
-          <h2 className="text-lg font-bold text-white">Filter Issues</h2>
+          <h2 className="text-lg font-bold text-slate-900">Filter Issues</h2>
         </div>
 
         <div className="grid gap-3 md:grid-cols-4">
@@ -1018,7 +1017,7 @@ export default function PunchPage() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-bold text-white">{it.title}</h3>
+                      <h3 className="text-lg font-bold text-slate-900">{it.title}</h3>
                       <span
                         className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(
                           s
@@ -1028,27 +1027,27 @@ export default function PunchPage() {
                       </span>
                     </div>
 
-                    <div className="mt-3 grid gap-2 text-sm text-slate-400 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-3">
                       <span>
-                        Trade: <span className="font-semibold text-white">{it.trade || "—"}</span>
+                        Trade: <span className="font-semibold text-slate-900">{it.trade || "—"}</span>
                       </span>
                       <span>
                         Location:{" "}
-                        <span className="font-semibold text-white">{it.location || "—"}</span>
+                        <span className="font-semibold text-slate-900">{it.location || "—"}</span>
                       </span>
                       <span>
                         Created By:{" "}
-                        <span className="font-semibold text-white">
+                        <span className="font-semibold text-slate-900">
                           {it.created_by_name || "—"}
                         </span>
                       </span>
                       <span>
-                        Photos: <span className="font-semibold text-white">{photoCount}</span>
+                        Photos: <span className="font-semibold text-slate-900">{photoCount}</span>
                       </span>
                       {assignedCompanyName ? (
                         <span>
                           Assigned:{" "}
-                          <span className="font-semibold text-white">{assignedCompanyName}</span>
+                          <span className="font-semibold text-slate-900">{assignedCompanyName}</span>
                         </span>
                       ) : null}
                     </div>
@@ -1058,7 +1057,7 @@ export default function PunchPage() {
                     <div className="flex shrink-0">
                       <button
                         onClick={() => deleteIssue(it.id)}
-                        className="inline-flex items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/20"
+                        className="inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100"
                         type="button"
                       >
                         Delete
@@ -1074,7 +1073,7 @@ export default function PunchPage() {
                       onClick={() =>
                         window.open(latestPhotoUrl, "_blank", "noopener,noreferrer")
                       }
-                      className="overflow-hidden rounded-2xl border border-slate-700"
+                      className="overflow-hidden rounded-2xl border border-black/10"
                       title="Open latest photo"
                     >
                       <img
@@ -1119,7 +1118,7 @@ export default function PunchPage() {
                   </label>
                 </div>
 
-                <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-3">
+                <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3">
                   <button
                     onClick={() => setStatus(it.id, "start")}
                     disabled={!canStart(s) || !!savingStatus[it.id]}
@@ -1176,17 +1175,17 @@ export default function PunchPage() {
         })}
 
         {!filtered.length ? (
-          <Card className="text-sm text-slate-300">No issues match your filters.</Card>
+          <Card className="text-sm text-slate-500">No issues match your filters.</Card>
         ) : null}
       </div>
 
       {photoViewerOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[28px] border border-slate-700 bg-black shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div className="min-w-0">
-                <div className="truncate text-base font-bold text-white">{photoViewerTitle}</div>
-                <div className="text-xs text-slate-400">
+                <div className="truncate text-base font-bold text-slate-900">{photoViewerTitle}</div>
+                <div className="text-xs text-slate-500">
                   {loadingPhotos ? "Loading photos..." : `${photoViewerPhotos.length} photo(s)`}
                 </div>
               </div>
@@ -1202,7 +1201,7 @@ export default function PunchPage() {
 
             <div className="max-h-[75vh] overflow-y-auto p-4">
               {loadingPhotos ? (
-                <div className="text-sm text-slate-300">Loading photos...</div>
+                <div className="text-sm text-slate-600">Loading photos...</div>
               ) : photoViewerPhotos.length ? (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {photoViewerPhotos.map((photo) => {
@@ -1214,7 +1213,7 @@ export default function PunchPage() {
                         href={url}
                         target="_blank"
                         rel="noreferrer"
-                        className="block overflow-hidden rounded-[24px] border border-slate-700 bg-slate-950 transition hover:border-[#2563eb]"
+                        className="block overflow-hidden rounded-[24px] border border-black/10 bg-white transition hover:border-blue-300"
                       >
                         <img
                           src={url}
@@ -1222,10 +1221,10 @@ export default function PunchPage() {
                           className="h-48 w-full object-cover"
                         />
                         <div className="p-3">
-                          <div className="truncate text-sm font-semibold text-white">
+                          <div className="truncate text-sm font-semibold text-slate-900">
                             {photo.original_name || "Photo"}
                           </div>
-                          <div className="mt-1 text-xs text-slate-400">
+                          <div className="mt-1 text-xs text-slate-500">
                             {photo.created_at
                               ? new Date(photo.created_at).toLocaleString()
                               : ""}
@@ -1236,7 +1235,7 @@ export default function PunchPage() {
                   })}
                 </div>
               ) : (
-                <div className="text-sm text-slate-300">No photos found for this issue.</div>
+                <div className="text-sm text-slate-600">No photos found for this issue.</div>
               )}
             </div>
           </div>
