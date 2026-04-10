@@ -1708,6 +1708,64 @@ app.post("/projects/:projectId/plans/:sheetId/supersede", requireAuth, async (re
   }
 });
 
+app.post(
+  "/projects/:projectId/plans/upload",
+  requireAuth,
+  upload.single("pdf"),
+  async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+      const membership = await requireProjectMember(projectId, req.userId);
+      if (!isGcRole(membership.role)) {
+        return apiError(res, 403, "Only GC users can upload plans");
+      }
+
+      if (!req.file) {
+        return apiError(res, 400, "No PDF uploaded");
+      }
+
+      const { sheetNo, sheetId: rawSheetId, title, discipline, makeCurrent, rev, revDate } =
+        req.body;
+
+      if (!sheetNo || !title || !discipline) {
+        return apiError(res, 400, "sheetNo, title, and discipline are required");
+      }
+
+      // rename uploaded file to .pdf
+      const ext = ".pdf";
+      const newFilename = `${req.file.filename}${ext}`;
+      const oldPath = req.file.path;
+      const newPath = path.join(UPLOAD_ROOT, newFilename);
+      await fs.rename(oldPath, newPath);
+
+      const fileUrl = `/uploads/${newFilename}`;
+      const sheetId = rawSheetId?.trim() || sheetNo.trim();
+      const status = makeCurrent === "true" ? "CURRENT" : "PENDING";
+
+      const store = await readPlans(projectId);
+      const updated = upsertSheetAndRevision(store, {
+        sheetId,
+        sheetNo: sheetNo.trim(),
+        title: title.trim(),
+        discipline: discipline.trim(),
+        rev: rev?.trim() || "1",
+        revDate: revDate?.trim() || new Date().toISOString().slice(0, 10),
+        fileUrl,
+        status,
+      });
+      await writePlans(projectId, updated);
+
+      res.json({ ok: true, sheet: { sheetId, sheetNo, title, discipline, fileUrl } });
+    } catch (e) {
+      console.error(e);
+      if (e.status === 400) return apiError(res, 400, e.message);
+      return handleThrownAccessError(res, e);
+    }
+  }
+);
+
 /* ERROR HANDLER */
 
 app.use((err, _req, res, _next) => {
