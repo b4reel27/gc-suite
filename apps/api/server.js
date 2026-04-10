@@ -235,6 +235,57 @@ async function logActivity(projectId, userName, action, type, title) {
       created_at timestamptz DEFAULT now()
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS jsa_forms (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'DRAFT'
+        CHECK (status IN ('DRAFT','SUBMITTED','APPROVED','REJECTED')),
+      work_description TEXT,
+      work_location TEXT,
+      jsa_date DATE,
+      superintendent_name TEXT,
+      emergency_contacts JSONB NOT NULL DEFAULT '{}',
+      hazards            JSONB NOT NULL DEFAULT '[]',
+      ppe                JSONB NOT NULL DEFAULT '[]',
+      work_steps         JSONB NOT NULL DEFAULT '[]',
+      crew               JSONB NOT NULL DEFAULT '[]',
+      submitted_at         TIMESTAMP,
+      approved_by_user_id  UUID REFERENCES users(id),
+      approved_at          TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS jsa_forms_project_id_idx ON jsa_forms(project_id)
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      log_date DATE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'IN_PROGRESS'
+        CHECK (status IN ('IN_PROGRESS','COMPILED')),
+      entries         JSONB NOT NULL DEFAULT '[]',
+      weather         TEXT,
+      manpower_count  INT,
+      manpower_detail TEXT,
+      narrative       TEXT,
+      tomorrow_checklist JSONB NOT NULL DEFAULT '[]',
+      compiled_at TIMESTAMP,
+      created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE(project_id, created_by_user_id, log_date)
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS daily_logs_project_id_idx ON daily_logs(project_id)
+  `);
 })().catch((e) => {
   console.error("Startup error:", e);
   process.exit(1);
