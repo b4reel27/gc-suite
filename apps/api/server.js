@@ -959,6 +959,334 @@ app.delete("/schedule-item/:id", requireAuth, async (req, res) => {
   }
 });
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   JSA / FORMS
+───────────────────────────────────────────────────────────────────────────── */
+
+async function getJsaForm(id) {
+  const { rows } = await pool.query(`SELECT * FROM jsa_forms WHERE id = $1`, [id]);
+  return rows[0] || null;
+}
+
+// List all JSA forms for a project
+app.get("/projects/:projectId/jsa", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    await requireProjectMember(projectId, req.userId);
+
+    const { rows } = await pool.query(
+      `SELECT j.*, u.name AS created_by_name
+       FROM jsa_forms j
+       LEFT JOIN users u ON u.id = j.created_by_user_id
+       WHERE j.project_id = $1
+       ORDER BY j.created_at DESC`,
+      [projectId]
+    );
+
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Create a new JSA form
+app.post("/projects/:projectId/jsa", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    await requireProjectMember(projectId, req.userId);
+
+    const {
+      work_description,
+      work_location,
+      jsa_date,
+      superintendent_name,
+      emergency_contacts = {},
+      hazards = [],
+      ppe = [],
+      work_steps = [],
+      crew = [],
+    } = req.body || {};
+
+    const userName = await getUserDisplayName(req.userId);
+
+    const { rows } = await pool.query(
+      `INSERT INTO jsa_forms (
+         project_id, created_by_user_id,
+         work_description, work_location, jsa_date, superintendent_name,
+         emergency_contacts, hazards, ppe, work_steps, crew
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING *`,
+      [
+        projectId,
+        req.userId,
+        work_description || null,
+        work_location || null,
+        normalizeDateInput(jsa_date),
+        superintendent_name || null,
+        JSON.stringify(emergency_contacts),
+        JSON.stringify(hazards),
+        JSON.stringify(ppe),
+        JSON.stringify(work_steps),
+        JSON.stringify(crew),
+      ]
+    );
+
+    await logActivity(
+      projectId,
+      userName,
+      "created",
+      "JSA",
+      rows[0].work_description || "Job Safety Analysis"
+    );
+
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Get a single JSA form
+app.get("/jsa/:jsaId", requireAuth, async (req, res) => {
+  try {
+    const { jsaId } = req.params;
+    if (!isUuid(jsaId)) return apiError(res, 400, "Invalid jsaId");
+
+    const jsa = await getJsaForm(jsaId);
+    if (!jsa) return apiError(res, 404, "JSA not found");
+
+    await requireProjectMember(jsa.project_id, req.userId);
+
+    res.json(jsa);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Update a JSA form (DRAFT or SUBMITTED only)
+app.put("/jsa/:jsaId", requireAuth, async (req, res) => {
+  try {
+    const { jsaId } = req.params;
+    if (!isUuid(jsaId)) return apiError(res, 400, "Invalid jsaId");
+
+    const jsa = await getJsaForm(jsaId);
+    if (!jsa) return apiError(res, 404, "JSA not found");
+
+    await requireProjectMember(jsa.project_id, req.userId);
+
+    if (jsa.status === "APPROVED") {
+      return apiError(res, 409, "Cannot edit an approved JSA");
+    }
+
+    const {
+      work_description,
+      work_location,
+      jsa_date,
+      superintendent_name,
+      emergency_contacts,
+      hazards,
+      ppe,
+      work_steps,
+      crew,
+    } = req.body || {};
+
+    const { rows } = await pool.query(
+      `UPDATE jsa_forms SET
+         work_description    = COALESCE($2,            work_description),
+         work_location       = COALESCE($3,            work_location),
+         jsa_date            = COALESCE($4,            jsa_date),
+         superintendent_name = COALESCE($5,            superintendent_name),
+         emergency_contacts  = COALESCE($6::jsonb,     emergency_contacts),
+         hazards             = COALESCE($7::jsonb,     hazards),
+         ppe                 = COALESCE($8::jsonb,     ppe),
+         work_steps          = COALESCE($9::jsonb,     work_steps),
+         crew                = COALESCE($10::jsonb,    crew)
+       WHERE id = $1
+       RETURNING *`,
+      [
+        jsaId,
+        work_description ?? null,
+        work_location ?? null,
+        normalizeDateInput(jsa_date),
+        superintendent_name ?? null,
+        emergency_contacts != null ? JSON.stringify(emergency_contacts) : null,
+        hazards     != null ? JSON.stringify(hazards)     : null,
+        ppe         != null ? JSON.stringify(ppe)         : null,
+        work_steps  != null ? JSON.stringify(work_steps)  : null,
+        crew        != null ? JSON.stringify(crew)        : null,
+      ]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Submit a JSA form for review
+app.post("/jsa/:jsaId/submit", requireAuth, async (req, res) => {
+  try {
+    const { jsaId } = req.params;
+    if (!isUuid(jsaId)) return apiError(res, 400, "Invalid jsaId");
+
+    const jsa = await getJsaForm(jsaId);
+    if (!jsa) return apiError(res, 404, "JSA not found");
+
+    await requireProjectMember(jsa.project_id, req.userId);
+
+    if (jsa.status !== "DRAFT") {
+      return apiError(res, 409, "Only DRAFT forms can be submitted", {
+        currentStatus: jsa.status,
+      });
+    }
+
+    const userName = await getUserDisplayName(req.userId);
+
+    const { rows } = await pool.query(
+      `UPDATE jsa_forms
+       SET status = 'SUBMITTED', submitted_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [jsaId]
+    );
+
+    await logActivity(
+      jsa.project_id,
+      userName,
+      "submitted",
+      "JSA",
+      jsa.work_description || "Job Safety Analysis"
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Approve a JSA form (GC only)
+app.post("/jsa/:jsaId/approve", requireAuth, async (req, res) => {
+  try {
+    const { jsaId } = req.params;
+    if (!isUuid(jsaId)) return apiError(res, 400, "Invalid jsaId");
+
+    const jsa = await getJsaForm(jsaId);
+    if (!jsa) return apiError(res, 404, "JSA not found");
+
+    await requireGcMembership(jsa.project_id, req.userId);
+
+    if (jsa.status !== "SUBMITTED") {
+      return apiError(res, 409, "Only SUBMITTED forms can be approved", {
+        currentStatus: jsa.status,
+      });
+    }
+
+    const userName = await getUserDisplayName(req.userId);
+
+    const { rows } = await pool.query(
+      `UPDATE jsa_forms
+       SET status = 'APPROVED', approved_by_user_id = $2, approved_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [jsaId, req.userId]
+    );
+
+    await logActivity(
+      jsa.project_id,
+      userName,
+      "approved",
+      "JSA",
+      jsa.work_description || "Job Safety Analysis"
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Reject a JSA form (GC only)
+app.post("/jsa/:jsaId/reject", requireAuth, async (req, res) => {
+  try {
+    const { jsaId } = req.params;
+    if (!isUuid(jsaId)) return apiError(res, 400, "Invalid jsaId");
+
+    const jsa = await getJsaForm(jsaId);
+    if (!jsa) return apiError(res, 404, "JSA not found");
+
+    await requireGcMembership(jsa.project_id, req.userId);
+
+    if (jsa.status !== "SUBMITTED") {
+      return apiError(res, 409, "Only SUBMITTED forms can be rejected", {
+        currentStatus: jsa.status,
+      });
+    }
+
+    const userName = await getUserDisplayName(req.userId);
+
+    const { rows } = await pool.query(
+      `UPDATE jsa_forms SET status = 'REJECTED' WHERE id = $1 RETURNING *`,
+      [jsaId]
+    );
+
+    await logActivity(
+      jsa.project_id,
+      userName,
+      "rejected",
+      "JSA",
+      jsa.work_description || "Job Safety Analysis"
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Delete a JSA form (non-approved only)
+app.delete("/jsa/:jsaId", requireAuth, async (req, res) => {
+  try {
+    const { jsaId } = req.params;
+    if (!isUuid(jsaId)) return apiError(res, 400, "Invalid jsaId");
+
+    const jsa = await getJsaForm(jsaId);
+    if (!jsa) return apiError(res, 404, "JSA not found");
+
+    await requireProjectMember(jsa.project_id, req.userId);
+
+    if (jsa.status === "APPROVED") {
+      return apiError(res, 409, "Cannot delete an approved JSA");
+    }
+
+    const userName = await getUserDisplayName(req.userId);
+
+    await pool.query(`DELETE FROM jsa_forms WHERE id = $1`, [jsaId]);
+
+    await logActivity(
+      jsa.project_id,
+      userName,
+      "deleted",
+      "JSA",
+      jsa.work_description || "Job Safety Analysis"
+    );
+
+    res.json({ ok: true, deleted: jsaId });
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
 /* ERROR HANDLER */
 
 app.use((err, _req, res, _next) => {

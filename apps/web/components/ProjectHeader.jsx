@@ -7,6 +7,7 @@ const tabs = [
   { label: "Plans", path: "plans" },
   { label: "Issues", path: "punch" },
   { label: "Schedule", path: "schedule" },
+  { label: "Forms", path: "forms" },
   { label: "Daily Log", path: "daily-log" },
   { label: "RFI", path: "rfi" },
   { label: "Submittals", path: "submittals" },

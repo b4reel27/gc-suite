@@ -298,6 +298,39 @@ CREATE TABLE IF NOT EXISTS pay_app_files (
 );
 
 -- ----------------------
+-- JSA / Forms
+-- ----------------------
+CREATE TABLE IF NOT EXISTS jsa_forms (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  created_by_user_id UUID NOT NULL REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','SUBMITTED','APPROVED','REJECTED')),
+
+  -- Header
+  work_description TEXT,
+  work_location TEXT,
+  jsa_date DATE,
+  superintendent_name TEXT,
+
+  -- Flexible sections stored as JSONB
+  emergency_contacts JSONB NOT NULL DEFAULT '{}',
+  hazards            JSONB NOT NULL DEFAULT '[]',
+  ppe                JSONB NOT NULL DEFAULT '[]',
+  work_steps         JSONB NOT NULL DEFAULT '[]',
+  crew               JSONB NOT NULL DEFAULT '[]',
+
+  -- Approval tracking
+  submitted_at         TIMESTAMP,
+  approved_by_user_id  UUID REFERENCES users(id),
+  approved_at          TIMESTAMP,
+
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS jsa_forms_project_id_idx ON jsa_forms(project_id);
+CREATE INDEX IF NOT EXISTS jsa_forms_status_idx ON jsa_forms(status);
+
+-- ----------------------
 -- Seed data for login/testing
 -- ----------------------
 INSERT INTO companies (id, name, type)
