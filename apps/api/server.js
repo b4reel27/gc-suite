@@ -7,6 +7,7 @@ import { Pool } from "pg";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
+import { randomUUID } from "crypto";
 
 dotenv.config();
 
@@ -953,6 +954,277 @@ app.delete("/schedule-item/:id", requireAuth, async (req, res) => {
     await pool.query(`DELETE FROM schedule_items WHERE id = $1`, [id]);
 
     res.json({ ok: true, deleted: id });
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DAILY LOG
+───────────────────────────────────────────────────────────────────────────── */
+
+async function getDailyLog(logId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM daily_logs WHERE id = $1`,
+    [logId]
+  );
+  return rows[0] || null;
+}
+
+// Get or create today's log for the current user
+app.get("/projects/:projectId/daily-log/today", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    await requireProjectMember(projectId, req.userId);
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    let { rows } = await pool.query(
+      `SELECT * FROM daily_logs
+       WHERE project_id = $1 AND created_by_user_id = $2 AND log_date = $3`,
+      [projectId, req.userId, today]
+    );
+
+    if (rows.length === 0) {
+      const result = await pool.query(
+        `INSERT INTO daily_logs (project_id, created_by_user_id, log_date)
+         VALUES ($1, $2, $3) RETURNING *`,
+        [projectId, req.userId, today]
+      );
+      rows = result.rows;
+    }
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// List past logs for a project (all team members)
+app.get("/projects/:projectId/daily-logs", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    await requireProjectMember(projectId, req.userId);
+
+    const { rows } = await pool.query(
+      `SELECT d.id, d.log_date, d.status, d.weather, d.manpower_count,
+              d.compiled_at, d.created_at, u.name AS created_by_name
+       FROM daily_logs d
+       LEFT JOIN users u ON u.id = d.created_by_user_id
+       WHERE d.project_id = $1
+       ORDER BY d.log_date DESC, d.created_at DESC
+       LIMIT 60`,
+      [projectId]
+    );
+
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Update entries / summary fields on a log
+app.put("/daily-log/:logId", requireAuth, async (req, res) => {
+  try {
+    const { logId } = req.params;
+    if (!isUuid(logId)) return apiError(res, 400, "Invalid logId");
+
+    const log = await getDailyLog(logId);
+    if (!log) return apiError(res, 404, "Log not found");
+
+    await requireProjectMember(log.project_id, req.userId);
+
+    if (log.created_by_user_id !== req.userId)
+      return apiError(res, 403, "Can only edit your own log");
+    if (log.status === "COMPILED")
+      return apiError(res, 409, "Log already compiled");
+
+    const { entries, weather, manpower_count, manpower_detail, narrative } =
+      req.body || {};
+
+    const { rows } = await pool.query(
+      `UPDATE daily_logs SET
+         entries         = COALESCE($2::jsonb, entries),
+         weather         = COALESCE($3,        weather),
+         manpower_count  = COALESCE($4,        manpower_count),
+         manpower_detail = COALESCE($5,        manpower_detail),
+         narrative       = COALESCE($6,        narrative)
+       WHERE id = $1 RETURNING *`,
+      [
+        logId,
+        entries        != null ? JSON.stringify(entries)  : null,
+        weather        ?? null,
+        manpower_count ?? null,
+        manpower_detail ?? null,
+        narrative      ?? null,
+      ]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Upload a photo and append it as an entry
+app.post(
+  "/daily-log/:logId/photo",
+  requireAuth,
+  upload.single("photo"),
+  async (req, res) => {
+    try {
+      const { logId } = req.params;
+      if (!isUuid(logId)) return apiError(res, 400, "Invalid logId");
+
+      const log = await getDailyLog(logId);
+      if (!log) return apiError(res, 404, "Log not found");
+
+      await requireProjectMember(log.project_id, req.userId);
+
+      if (log.created_by_user_id !== req.userId)
+        return apiError(res, 403, "Can only add to your own log");
+      if (!req.file) return apiError(res, 400, "No photo uploaded");
+
+      const now = new Date();
+      const time = `${String(now.getHours()).padStart(2, "0")}:${String(
+        now.getMinutes()
+      ).padStart(2, "0")}`;
+
+      const newEntry = {
+        id:            randomUUID(),
+        type:          "photo",
+        file_path:     req.file.path,
+        original_name: req.file.originalname,
+        mime_type:     req.file.mimetype,
+        size_bytes:    req.file.size,
+        caption:       req.body?.caption || "",
+        time,
+        created_at:    now.toISOString(),
+      };
+
+      const currentEntries = Array.isArray(log.entries) ? log.entries : [];
+      const updatedEntries  = [...currentEntries, newEntry];
+
+      const { rows } = await pool.query(
+        `UPDATE daily_logs SET entries = $2::jsonb WHERE id = $1 RETURNING *`,
+        [logId, JSON.stringify(updatedEntries)]
+      );
+
+      res.json({ log: rows[0], entry: newEntry });
+    } catch (e) {
+      console.error(e);
+      return handleThrownAccessError(res, e);
+    }
+  }
+);
+
+// Compile the day — creates issues + schedule items, locks the log
+app.post("/daily-log/:logId/compile", requireAuth, async (req, res) => {
+  try {
+    const { logId } = req.params;
+    if (!isUuid(logId)) return apiError(res, 400, "Invalid logId");
+
+    const log = await getDailyLog(logId);
+    if (!log) return apiError(res, 404, "Log not found");
+
+    await requireProjectMember(log.project_id, req.userId);
+
+    if (log.created_by_user_id !== req.userId)
+      return apiError(res, 403, "Can only compile your own log");
+    if (log.status === "COMPILED")
+      return apiError(res, 409, "Log already compiled");
+
+    const {
+      weather,
+      manpower_count,
+      manpower_detail,
+      narrative,
+      tomorrow_checklist = [],
+      create_issues      = [],
+      create_schedule_items = [],
+    } = req.body || {};
+
+    const userName       = await getUserDisplayName(req.userId);
+    const createdIssues  = [];
+    const createdItems   = [];
+
+    for (const issue of create_issues) {
+      if (!issue.title) continue;
+      const { rows } = await pool.query(
+        `INSERT INTO issues
+           (project_id, title, location, trade, status, created_by_user_id)
+         VALUES ($1,$2,$3,$4,'OPEN',$5) RETURNING id, title`,
+        [
+          log.project_id,
+          issue.title,
+          issue.location || "General",
+          issue.trade    || "General",
+          req.userId,
+        ]
+      );
+      createdIssues.push(rows[0]);
+      await logActivity(log.project_id, userName, "created", "Issue", rows[0].title);
+    }
+
+    for (const item of create_schedule_items) {
+      if (!item.title) continue;
+      const { rows } = await pool.query(
+        `INSERT INTO schedule_items
+           (project_id, title, due_date, notes, status, created_by_user_id)
+         VALUES ($1,$2,$3,$4,'OPEN',$5) RETURNING id, title`,
+        [
+          log.project_id,
+          item.title,
+          normalizeDateInput(item.due_date),
+          item.notes || null,
+          req.userId,
+        ]
+      );
+      createdItems.push(rows[0]);
+      await logActivity(log.project_id, userName, "created", "Schedule Item", rows[0].title);
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE daily_logs SET
+         status             = 'COMPILED',
+         compiled_at        = NOW(),
+         weather            = COALESCE($2, weather),
+         manpower_count     = COALESCE($3, manpower_count),
+         manpower_detail    = COALESCE($4, manpower_detail),
+         narrative          = COALESCE($5, narrative),
+         tomorrow_checklist = $6::jsonb
+       WHERE id = $1 RETURNING *`,
+      [
+        logId,
+        weather         ?? null,
+        manpower_count  ?? null,
+        manpower_detail ?? null,
+        narrative       ?? null,
+        JSON.stringify(tomorrow_checklist),
+      ]
+    );
+
+    await logActivity(
+      log.project_id,
+      userName,
+      "compiled",
+      "Daily Log",
+      `Daily Log ${log.log_date}`
+    );
+
+    res.json({
+      log:                    rows[0],
+      created_issues:         createdIssues,
+      created_schedule_items: createdItems,
+    });
   } catch (e) {
     console.error(e);
     return handleThrownAccessError(res, e);

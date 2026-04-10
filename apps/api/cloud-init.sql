@@ -298,6 +298,40 @@ CREATE TABLE IF NOT EXISTS pay_app_files (
 );
 
 -- ----------------------
+-- Daily Log
+-- ----------------------
+CREATE TABLE IF NOT EXISTS daily_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  created_by_user_id UUID NOT NULL REFERENCES users(id),
+  log_date DATE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'IN_PROGRESS'
+    CHECK (status IN ('IN_PROGRESS','COMPILED')),
+
+  -- Entries accumulated throughout the day
+  -- Each: {id, type:'note'|'photo'|'voice', content, time, created_at,
+  --         file_path?, original_name?, mime_type?, size_bytes?, caption?}
+  entries JSONB NOT NULL DEFAULT '[]',
+
+  -- End-of-day summary
+  weather         TEXT,
+  manpower_count  INT,
+  manpower_detail TEXT,
+  narrative       TEXT,
+
+  -- Tomorrow's checklist (compiled)
+  tomorrow_checklist JSONB NOT NULL DEFAULT '[]',
+
+  compiled_at TIMESTAMP,
+  created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+
+  UNIQUE(project_id, created_by_user_id, log_date)
+);
+
+CREATE INDEX IF NOT EXISTS daily_logs_project_id_idx ON daily_logs(project_id);
+CREATE INDEX IF NOT EXISTS daily_logs_date_idx       ON daily_logs(project_id, log_date);
+
+-- ----------------------
 -- JSA / Forms
 -- ----------------------
 CREATE TABLE IF NOT EXISTS jsa_forms (

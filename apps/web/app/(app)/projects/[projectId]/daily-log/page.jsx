@@ -1,162 +1,912 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import ProjectHeader from "../../../../../components/ProjectHeader";
 
-function Section({ title, subtitle, children }) {
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function getToken() {
+  if (typeof document === "undefined") return "";
+  const cookieVal = (name) =>
+    document.cookie
+      .split("; ")
+      .find((c) => c.startsWith(name + "="))
+      ?.split("=")
+      .slice(1)
+      .join("=") || "";
+  const tok =
+    cookieVal("gc_auth") || cookieVal("gc_token") || cookieVal("token") || cookieVal("gcToken") || "";
+  if (tok) return decodeURIComponent(tok);
+  return localStorage.getItem("token") || "";
+}
+
+function getApiBase() {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined" && window?.location?.hostname)
+    return `http://${window.location.hostname}:3005`;
+  return "http://localhost:3005";
+}
+
+function nowTime() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function entryId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function prettyTime(t) {
+  if (!t) return "";
+  const [h, m] = t.split(":");
+  const hh = parseInt(h, 10);
+  const ampm = hh >= 12 ? "PM" : "AM";
+  return `${hh % 12 || 12}:${m} ${ampm}`;
+}
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
+
+function Card({ children, className = "" }) {
   return (
-    <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-4">
-        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-        {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
-      </div>
+    <div className={`rounded-[28px] border border-black/10 bg-white p-4 shadow-sm sm:p-5 ${className}`}>
       {children}
-    </section>
+    </div>
   );
 }
 
-function Field({ label, children }) {
+function SectionLabel({ children }) {
   return (
-    <label className="block">
-      <div className="mb-1.5 text-sm font-semibold text-slate-700">{label}</div>
+    <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+      {children}
+    </div>
+  );
+}
+
+function InputRow({ label, children }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-semibold text-slate-600">{label}</span>
       {children}
     </label>
   );
 }
 
-export default function DailyLogPage() {
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [form, setForm] = useState({
-    date: today,
-    weather: "",
-    manpower: "",
-    workCompleted: "",
-    deliveries: "",
-    visitors: "",
-    delays: "",
-    safety: "",
-    notes: "",
-  });
+const inputCls =
+  "rounded-2xl border border-black/10 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
 
-  function update(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+// ─── Entry Card ───────────────────────────────────────────────────────────────
+
+function EntryCard({ entry, apiBase }) {
+  const icon =
+    entry.type === "photo" ? "📷" : entry.type === "voice" ? "🎙️" : "📝";
+
+  const photoUrl =
+    entry.type === "photo" && entry.file_path
+      ? `${apiBase}/${entry.file_path}`
+      : null;
+
+  return (
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center gap-1">
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-black/10 bg-slate-50 text-base">
+          {icon}
+        </div>
+        <div className="w-px flex-1 bg-slate-100" />
+      </div>
+      <div className="mb-4 min-w-0 flex-1 rounded-2xl border border-black/10 bg-white p-3 shadow-sm">
+        <div className="mb-1 text-[11px] font-semibold text-slate-400">
+          {prettyTime(entry.time)}
+          {entry.type === "voice" ? " · Voice memo" : entry.type === "photo" ? " · Photo" : ""}
+        </div>
+        {entry.type === "photo" && photoUrl && (
+          <img
+            src={photoUrl}
+            alt={entry.caption || "Photo"}
+            className="mb-2 max-h-48 w-full rounded-xl object-cover"
+          />
+        )}
+        {(entry.content || entry.caption) && (
+          <p className="text-sm leading-relaxed text-slate-800">
+            {entry.content || entry.caption}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Voice Recorder ───────────────────────────────────────────────────────────
+
+function VoiceRecorder({ onSave, onCancel }) {
+  const recognitionRef  = useRef(null);
+  const accumulatedRef  = useRef("");
+  const [active, setActive]   = useState(false);
+  const [display, setDisplay] = useState("");
+  const [supported, setSupported] = useState(true);
+
+  useEffect(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) setSupported(false);
+  }, []);
+
+  function startRecording() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+
+    accumulatedRef.current = "";
+    setDisplay("");
+
+    const rec = new SR();
+    rec.continuous      = true;
+    rec.interimResults  = true;
+    rec.lang            = "en-US";
+
+    rec.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          accumulatedRef.current += event.results[i][0].transcript + " ";
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      setDisplay(accumulatedRef.current + interim);
+    };
+
+    rec.onerror = () => setActive(false);
+    rec.onend   = () => setActive(false);
+
+    recognitionRef.current = rec;
+    rec.start();
+    setActive(true);
+  }
+
+  function stopRecording() {
+    recognitionRef.current?.stop();
+    setActive(false);
+  }
+
+  function save() {
+    const transcript = (accumulatedRef.current || display).trim();
+    if (transcript) onSave(transcript);
+  }
+
+  if (!supported) {
+    return (
+      <Card>
+        <p className="text-sm text-slate-500">
+          Voice recording requires Chrome or Edge. Please use a text note instead.
+        </p>
+        <button
+          onClick={onCancel}
+          className="mt-3 rounded-2xl border border-black/10 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Cancel
+        </button>
+      </Card>
+    );
   }
 
   return (
-    <div className="space-y-4 sm:space-y-5">
-      <ProjectHeader projectName="Daily Log" location="Field-ready starter" />
+    <Card>
+      <SectionLabel>Voice Memo</SectionLabel>
 
-      <Section
-        title="Daily Log"
-        subtitle="This is a solid starting shell for supers. Next move could be save-to-API, photo attach, and voice-to-log."
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Date">
+      {/* Transcript display */}
+      <div className="mb-4 min-h-[80px] rounded-2xl border border-black/10 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800">
+        {display || (
+          <span className="text-slate-400">
+            {active ? "Listening… speak now" : "Tap the mic to start"}
+          </span>
+        )}
+      </div>
+
+      {/* Recording button */}
+      <div className="mb-4 flex justify-center">
+        <button
+          onClick={active ? stopRecording : startRecording}
+          className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl shadow-lg transition ${
+            active
+              ? "animate-pulse bg-red-500 text-white"
+              : "bg-slate-900 text-white hover:bg-slate-800"
+          }`}
+        >
+          {active ? "⏹" : "🎙️"}
+        </button>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={onCancel}
+          className="flex-1 rounded-2xl border border-black/10 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={save}
+          disabled={!display.trim()}
+          className="flex-1 rounded-2xl bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+        >
+          Save Memo
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Compile Screen ───────────────────────────────────────────────────────────
+
+function CompileScreen({ log, apiBase, onDone, onBack }) {
+  const [weather, setWeather]           = useState(log.weather || "");
+  const [manpowerCount, setMpCount]     = useState(log.manpower_count || "");
+  const [manpowerDetail, setMpDetail]   = useState(log.manpower_detail || "");
+  const [narrative, setNarrative]       = useState(log.narrative || "");
+
+  // {[entryId]: 'issue' | 'schedule' | 'tomorrow' | null}
+  const [tags, setTags] = useState({});
+
+  // {[entryId]: {title, location, trade}}
+  const [issueForms, setIssueForms] = useState({});
+
+  // {[entryId]: {title, due_date, notes}}
+  const [scheduleForms, setScheduleForms] = useState({});
+
+  // Manual checklist items (in addition to 'tomorrow'-tagged entries)
+  const [checkItems, setCheckItems] = useState([""]);
+
+  const [compiling, setCompiling] = useState(false);
+  const [error, setError]         = useState("");
+  const [result, setResult]       = useState(null);
+
+  const entries = Array.isArray(log.entries) ? log.entries : [];
+
+  function setTag(id, tag) {
+    setTags((p) => ({ ...p, [id]: p[id] === tag ? null : tag }));
+  }
+
+  function setIssueField(id, field, value) {
+    setIssueForms((p) => ({ ...p, [id]: { ...(p[id] || {}), [field]: value } }));
+  }
+
+  function setScheduleField(id, field, value) {
+    setScheduleForms((p) => ({ ...p, [id]: { ...(p[id] || {}), [field]: value } }));
+  }
+
+  function addCheckItem() {
+    setCheckItems((p) => [...p, ""]);
+  }
+
+  function setCheckItem(i, v) {
+    setCheckItems((p) => p.map((x, idx) => (idx === i ? v : x)));
+  }
+
+  async function apiFetch(path, opts = {}) {
+    const token = getToken();
+    const res = await fetch(`${apiBase}${path}`, {
+      ...opts,
+      headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+    });
+    if (!res.ok) {
+      let msg = `Error ${res.status}`;
+      try { const d = await res.json(); msg = d?.error || msg; } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
+  async function handleCompile() {
+    setCompiling(true);
+    setError("");
+    try {
+      // Build tomorrow checklist
+      const tomorrowFromEntries = entries
+        .filter((e) => tags[e.id] === "tomorrow")
+        .map((e) => e.content || e.caption || "Note");
+
+      const tomorrow_checklist = [
+        ...tomorrowFromEntries,
+        ...checkItems.map((x) => x.trim()).filter(Boolean),
+      ];
+
+      const create_issues = entries
+        .filter((e) => tags[e.id] === "issue")
+        .map((e) => ({
+          title:    issueForms[e.id]?.title    || e.content || e.caption || "Issue",
+          location: issueForms[e.id]?.location || "",
+          trade:    issueForms[e.id]?.trade    || "General",
+        }));
+
+      const create_schedule_items = entries
+        .filter((e) => tags[e.id] === "schedule")
+        .map((e) => ({
+          title:    scheduleForms[e.id]?.title    || e.content || e.caption || "Task",
+          due_date: scheduleForms[e.id]?.due_date || "",
+          notes:    scheduleForms[e.id]?.notes    || "",
+        }));
+
+      const data = await apiFetch(`/daily-log/${log.id}/compile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          weather,
+          manpower_count:  manpowerCount ? Number(manpowerCount) : null,
+          manpower_detail: manpowerDetail || null,
+          narrative,
+          tomorrow_checklist,
+          create_issues,
+          create_schedule_items,
+        }),
+      });
+
+      setResult(data);
+    } catch (e) {
+      setError(e.message || "Compile failed");
+    } finally {
+      setCompiling(false);
+    }
+  }
+
+  // ── Done / Results screen ──
+  if (result) {
+    const issues = result.created_issues || [];
+    const items  = result.created_schedule_items || [];
+    const checklist = result.log?.tomorrow_checklist || [];
+
+    return (
+      <Card>
+        <div className="mb-4 text-center text-4xl">✅</div>
+        <div className="mb-1 text-center text-xl font-extrabold text-slate-900">Day Compiled</div>
+        <div className="mb-6 text-center text-sm text-slate-500">
+          Your daily log is saved and locked.
+        </div>
+
+        {issues.length > 0 && (
+          <div className="mb-4">
+            <SectionLabel>Issues Created ({issues.length})</SectionLabel>
+            <div className="space-y-1">
+              {issues.map((i) => (
+                <div key={i.id} className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  ⚠ {i.title}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {items.length > 0 && (
+          <div className="mb-4">
+            <SectionLabel>Schedule Items Created ({items.length})</SectionLabel>
+            <div className="space-y-1">
+              {items.map((i) => (
+                <div key={i.id} className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                  📅 {i.title}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {checklist.length > 0 && (
+          <div className="mb-4">
+            <SectionLabel>Tomorrow's Checklist ({checklist.length})</SectionLabel>
+            <div className="space-y-1">
+              {checklist.map((item, i) => (
+                <div key={i} className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  ✓ {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={onDone}
+          className="mt-2 w-full rounded-2xl bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+        >
+          Done
+        </button>
+      </Card>
+    );
+  }
+
+  // ── Compile form ──
+  return (
+    <div className="space-y-4">
+      {/* Back */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onBack}
+          className="rounded-2xl border border-black/10 bg-white p-2.5 shadow-sm hover:bg-slate-50"
+        >
+          <svg className="h-5 w-5 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <div className="text-xl font-extrabold text-slate-900">End of Day — Compile</div>
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+      )}
+
+      {/* Day Summary */}
+      <Card>
+        <SectionLabel>Day Summary</SectionLabel>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <InputRow label="Weather / Conditions">
             <input
-              type="date"
-              value={form.date}
-              onChange={(e) => update("date", e.target.value)}
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400"
+              value={weather}
+              onChange={(e) => setWeather(e.target.value)}
+              placeholder="Clear, 78°F / Rain delay…"
+              className={inputCls}
             />
-          </Field>
-
-          <Field label="Weather / Conditions">
+          </InputRow>
+          <InputRow label="Total Manpower on Site">
             <input
-              value={form.weather}
-              onChange={(e) => update("weather", e.target.value)}
-              placeholder="Clear, muddy, windy, rain delay..."
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400"
+              type="number"
+              value={manpowerCount}
+              onChange={(e) => setMpCount(e.target.value)}
+              placeholder="12"
+              className={inputCls}
             />
-          </Field>
-
-          <Field label="Manpower / Trades On Site">
-            <textarea
-              rows={4}
-              value={form.manpower}
-              onChange={(e) => update("manpower", e.target.value)}
-              placeholder="Framers 5, electricians 2, drywall 4..."
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400"
+          </InputRow>
+          <InputRow label="Trades / Breakdown">
+            <input
+              value={manpowerDetail}
+              onChange={(e) => setMpDetail(e.target.value)}
+              placeholder="Framers 5, Electricians 2, Concrete 5…"
+              className={`${inputCls} sm:col-span-2`}
             />
-          </Field>
-
-          <Field label="Work Completed">
-            <textarea
-              rows={4}
-              value={form.workCompleted}
-              onChange={(e) => update("workCompleted", e.target.value)}
-              placeholder="Hung grid in corridor, set rooftop curb, punch room 103..."
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400"
-            />
-          </Field>
-
-          <Field label="Deliveries / Equipment">
-            <textarea
-              rows={4}
-              value={form.deliveries}
-              onChange={(e) => update("deliveries", e.target.value)}
-              placeholder="Received RTU, scissor lift on site, concrete truck delayed..."
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400"
-            />
-          </Field>
-
-          <Field label="Visitors / Inspections">
-            <textarea
-              rows={4}
-              value={form.visitors}
-              onChange={(e) => update("visitors", e.target.value)}
-              placeholder="Owner visit, city inspection, architect walkthrough..."
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400"
-            />
-          </Field>
-
-          <Field label="Delays / Impacts">
-            <textarea
-              rows={4}
-              value={form.delays}
-              onChange={(e) => update("delays", e.target.value)}
-              placeholder="Rain delay, missing material, access issue..."
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400"
-            />
-          </Field>
-
-          <Field label="Safety / Incidents">
-            <textarea
-              rows={4}
-              value={form.safety}
-              onChange={(e) => update("safety", e.target.value)}
-              placeholder="No incidents, toolbox talk completed, PPE reminder..."
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400"
-            />
-          </Field>
+          </InputRow>
+          <div className="sm:col-span-2">
+            <InputRow label="Day Narrative">
+              <textarea
+                value={narrative}
+                onChange={(e) => setNarrative(e.target.value)}
+                placeholder="Summary of what happened today…"
+                rows={3}
+                className={`${inputCls} w-full resize-none`}
+              />
+            </InputRow>
+          </div>
         </div>
+      </Card>
 
-        <div className="mt-4">
-          <Field label="General Notes">
-            <textarea
-              rows={6}
-              value={form.notes}
-              onChange={(e) => update("notes", e.target.value)}
-              placeholder="Anything else worth documenting for the day..."
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-400"
+      {/* Tag Entries */}
+      {entries.length > 0 && (
+        <Card>
+          <SectionLabel>Tag Entries — what should each become?</SectionLabel>
+          <div className="space-y-3">
+            {entries.map((entry) => {
+              const tag = tags[entry.id] || null;
+              const preview = entry.content || entry.caption || "Photo";
+
+              return (
+                <div key={entry.id} className="rounded-2xl border border-black/10 bg-slate-50 p-3">
+                  <div className="mb-1 text-[11px] text-slate-400">{prettyTime(entry.time)}</div>
+                  <p className="mb-3 text-sm text-slate-800 line-clamp-2">{preview}</p>
+
+                  {/* Tag pills */}
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {[
+                      { key: "issue",    label: "⚠ Issue",         active: "bg-amber-500 text-white border-amber-500" },
+                      { key: "schedule", label: "📅 Schedule Item", active: "bg-blue-500 text-white border-blue-500" },
+                      { key: "tomorrow", label: "✓ Tomorrow",       active: "bg-emerald-500 text-white border-emerald-500" },
+                    ].map(({ key, label, active }) => (
+                      <button
+                        key={key}
+                        onClick={() => setTag(entry.id, key)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                          tag === key ? active : "border-black/10 bg-white text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Issue detail form */}
+                  {tag === "issue" && (
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <input
+                        value={issueForms[entry.id]?.title || ""}
+                        onChange={(e) => setIssueField(entry.id, "title", e.target.value)}
+                        placeholder="Issue title"
+                        className={`${inputCls} sm:col-span-3`}
+                      />
+                      <input
+                        value={issueForms[entry.id]?.location || ""}
+                        onChange={(e) => setIssueField(entry.id, "location", e.target.value)}
+                        placeholder="Location"
+                        className={inputCls}
+                      />
+                      <input
+                        value={issueForms[entry.id]?.trade || ""}
+                        onChange={(e) => setIssueField(entry.id, "trade", e.target.value)}
+                        placeholder="Trade"
+                        className={inputCls}
+                      />
+                    </div>
+                  )}
+
+                  {/* Schedule detail form */}
+                  {tag === "schedule" && (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <input
+                        value={scheduleForms[entry.id]?.title || ""}
+                        onChange={(e) => setScheduleField(entry.id, "title", e.target.value)}
+                        placeholder="Task title"
+                        className={`${inputCls} sm:col-span-2`}
+                      />
+                      <input
+                        type="date"
+                        value={scheduleForms[entry.id]?.due_date || ""}
+                        onChange={(e) => setScheduleField(entry.id, "due_date", e.target.value)}
+                        className={inputCls}
+                      />
+                      <input
+                        value={scheduleForms[entry.id]?.notes || ""}
+                        onChange={(e) => setScheduleField(entry.id, "notes", e.target.value)}
+                        placeholder="Notes (optional)"
+                        className={inputCls}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* Tomorrow's Checklist (manual) */}
+      <Card>
+        <SectionLabel>Tomorrow's Checklist — add items</SectionLabel>
+        <div className="space-y-2">
+          {checkItems.map((item, i) => (
+            <input
+              key={i}
+              value={item}
+              onChange={(e) => setCheckItem(i, e.target.value)}
+              placeholder={`Item ${i + 1}`}
+              className={`${inputCls} w-full`}
             />
-          </Field>
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          ))}
           <button
-            type="button"
-            className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            onClick={addCheckItem}
+            className="w-full rounded-2xl border border-dashed border-slate-300 py-2.5 text-sm font-semibold text-slate-500 transition hover:border-slate-500 hover:text-slate-800"
           >
-            Save Daily Log
-          </button>
-          <button
-            type="button"
-            className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            Add Photos Later
+            + Add Item
           </button>
         </div>
-      </Section>
+      </Card>
+
+      {/* Finalize */}
+      <Card>
+        <button
+          onClick={handleCompile}
+          disabled={compiling}
+          className="w-full rounded-2xl bg-slate-900 py-3.5 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-40"
+        >
+          {compiling ? "Compiling…" : "Finalize Day"}
+        </button>
+        <p className="mt-2 text-center text-xs text-slate-400">
+          This will create the tagged issues &amp; schedule items and lock today's log.
+        </p>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export default function DailyLogPage() {
+  const { projectId } = useParams();
+  const apiBase = useMemo(() => getApiBase(), []);
+
+  const [view, setView]       = useState("log"); // 'log' | 'compile'
+  const [addMode, setAddMode] = useState(null);  // null | 'note' | 'voice'
+
+  const [log, setLog]                     = useState(null);
+  const [projectName, setProjectName]     = useState("");
+  const [projectLoc, setProjectLoc]       = useState("");
+  const [loadError, setLoadError]         = useState("");
+  const [saving, setSaving]               = useState(false);
+  const [actionError, setActionError]     = useState("");
+
+  // Note input
+  const [noteText, setNoteText] = useState("");
+
+  // Photo input ref
+  const photoInputRef = useRef(null);
+
+  async function apiFetch(path, opts = {}) {
+    const token = getToken();
+    if (!token) throw new Error("Not logged in");
+    const res = await fetch(`${apiBase}${path}`, {
+      ...opts,
+      headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+    });
+    if (!res.ok) {
+      let msg = `Error ${res.status}`;
+      try { const d = await res.json(); msg = d?.error || msg; } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoadError("");
+      try {
+        const [projects, todayLog] = await Promise.all([
+          apiFetch(`/projects`),
+          apiFetch(`/projects/${projectId}/daily-log/today`),
+        ]);
+        if (cancelled) return;
+        const p = projects.find((x) => x.id === projectId);
+        if (p) { setProjectName(p.name || ""); setProjectLoc(p.location || ""); }
+        setLog(todayLog);
+      } catch (e) {
+        if (cancelled) return;
+        setLoadError(e.message || "Failed to load");
+      }
+    }
+    if (projectId) load();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  // ── Add entries ─────────────────────────────────────────────────────────────
+
+  async function addEntry(entry) {
+    if (!log) return;
+    setSaving(true);
+    setActionError("");
+    try {
+      const currentEntries = Array.isArray(log.entries) ? log.entries : [];
+      const newEntry = { id: entryId(), time: nowTime(), created_at: new Date().toISOString(), ...entry };
+      const updated = await apiFetch(`/daily-log/${log.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries: [...currentEntries, newEntry] }),
+      });
+      setLog(updated);
+    } catch (e) {
+      setActionError(e.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function saveNote() {
+    const text = noteText.trim();
+    if (!text) return;
+    addEntry({ type: "note", content: text });
+    setNoteText("");
+    setAddMode(null);
+  }
+
+  function saveVoice(transcript) {
+    addEntry({ type: "voice", content: transcript });
+    setAddMode(null);
+  }
+
+  async function handlePhotoFile(file) {
+    if (!log || !file) return;
+    setSaving(true);
+    setActionError("");
+    try {
+      const fd = new FormData();
+      fd.append("photo", file);
+      const token = getToken();
+      const res = await fetch(`${apiBase}/daily-log/${log.id}/photo`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Upload failed");
+      }
+      const data = await res.json();
+      setLog(data.log);
+    } catch (e) {
+      setActionError(e.message || "Upload failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
+  const entries = log ? (Array.isArray(log.entries) ? log.entries : []) : [];
+  const isCompiled = log?.status === "COMPILED";
+
+  if (view === "compile" && log) {
+    return (
+      <div className="space-y-4">
+        <ProjectHeader projectName={projectName || "Project"} location={projectLoc || ""} />
+        <CompileScreen
+          log={log}
+          apiBase={apiBase}
+          onBack={() => setView("log")}
+          onDone={() => { setView("log"); apiFetch(`/projects/${projectId}/daily-log/today`).then(setLog).catch(() => {}); }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ProjectHeader projectName={projectName || "Project"} location={projectLoc || ""} />
+
+      {loadError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{loadError}</div>
+      )}
+      {actionError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{actionError}</div>
+      )}
+
+      {/* Day header */}
+      <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-lg font-extrabold text-slate-900">
+              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+            </div>
+            <div className="mt-0.5 text-sm text-slate-500">
+              {entries.length} {entries.length === 1 ? "entry" : "entries"} today
+            </div>
+          </div>
+          {isCompiled ? (
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              Day Compiled
+            </span>
+          ) : (
+            <button
+              onClick={() => setView("compile")}
+              disabled={!log || entries.length === 0}
+              className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+            >
+              End Day →
+            </button>
+          )}
+        </div>
+      </Card>
+
+      {/* Add entry controls */}
+      {!isCompiled && log && (
+        <>
+          {addMode === "note" && (
+            <Card>
+              <SectionLabel>Quick Note</SectionLabel>
+              <textarea
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="What's happening on site right now?"
+                rows={3}
+                autoFocus
+                className={`${inputCls} w-full resize-none`}
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => { setAddMode(null); setNoteText(""); }}
+                  className="flex-1 rounded-2xl border border-black/10 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveNote}
+                  disabled={!noteText.trim() || saving}
+                  className="flex-1 rounded-2xl bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+                >
+                  {saving ? "Saving…" : "Save Note"}
+                </button>
+              </div>
+            </Card>
+          )}
+
+          {addMode === "voice" && (
+            <VoiceRecorder
+              onSave={saveVoice}
+              onCancel={() => setAddMode(null)}
+            />
+          )}
+
+          {addMode === null && (
+            <Card>
+              <SectionLabel>Add to Today's Log</SectionLabel>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setAddMode("note")}
+                  className="flex flex-col items-center gap-2 rounded-2xl border border-black/10 bg-slate-50 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  <span className="text-2xl">📝</span>
+                  Note
+                </button>
+                <button
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={saving}
+                  className="flex flex-col items-center gap-2 rounded-2xl border border-black/10 bg-slate-50 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40"
+                >
+                  <span className="text-2xl">📷</span>
+                  Photo
+                </button>
+                <button
+                  onClick={() => setAddMode("voice")}
+                  className="flex flex-col items-center gap-2 rounded-2xl border border-black/10 bg-slate-50 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  <span className="text-2xl">🎙️</span>
+                  Voice
+                </button>
+              </div>
+              {/* Hidden photo file input */}
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handlePhotoFile(file);
+                  e.target.value = "";
+                }}
+              />
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* Timeline */}
+      {entries.length === 0 ? (
+        <Card>
+          <div className="py-10 text-center text-sm text-slate-400">
+            {isCompiled
+              ? "This day has been compiled."
+              : "Nothing logged yet — add a note, photo, or voice memo above."}
+          </div>
+        </Card>
+      ) : (
+        <Card>
+          <SectionLabel>Today's Timeline</SectionLabel>
+          <div>
+            {entries.map((entry, i) => (
+              <EntryCard key={entry.id || i} entry={entry} apiBase={apiBase} />
+            ))}
+            {/* End of timeline dot */}
+            <div className="ml-4 h-3 w-3 -translate-x-1.5 rounded-full border-2 border-slate-300 bg-white" />
+          </div>
+        </Card>
+      )}
+
+      {/* Compiled summary */}
+      {isCompiled && (
+        <Card>
+          <SectionLabel>Day Summary</SectionLabel>
+          <div className="grid gap-3 sm:grid-cols-2 text-sm">
+            {log.weather && <div><span className="font-semibold text-slate-500">Weather: </span>{log.weather}</div>}
+            {log.manpower_count && <div><span className="font-semibold text-slate-500">Manpower: </span>{log.manpower_count} on site</div>}
+            {log.manpower_detail && <div className="sm:col-span-2"><span className="font-semibold text-slate-500">Trades: </span>{log.manpower_detail}</div>}
+            {log.narrative && <div className="sm:col-span-2 leading-relaxed text-slate-700">{log.narrative}</div>}
+          </div>
+
+          {Array.isArray(log.tomorrow_checklist) && log.tomorrow_checklist.length > 0 && (
+            <div className="mt-4">
+              <SectionLabel>Tomorrow's Checklist</SectionLabel>
+              <div className="space-y-1">
+                {log.tomorrow_checklist.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                    <span className="mt-0.5 text-emerald-500">✓</span>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
