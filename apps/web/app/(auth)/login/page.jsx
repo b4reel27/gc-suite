@@ -3,8 +3,6 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-const API = process.env.NEXT_PUBLIC_API_URL;
-
 function LoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -20,26 +18,30 @@ function LoginInner() {
     setError("");
 
     try {
-      const res = await fetch(`${API}/auth/dev-login`, {
+      // Call our own Next.js API route (same-origin — no CORS issues)
+      const res = await fetch("/api/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Login failed");
+        throw new Error(data?.error || "Login failed");
       }
 
+      // Store token for client-side API calls (cookie is set by the route)
       localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
 
       router.replace(next);
     } catch (err) {
-      setError(err.message || "Login failed");
+      if (err.message === "Failed to fetch") {
+        setError("Cannot reach the server. Please try again in a moment.");
+      } else {
+        setError(err.message || "Login failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -66,7 +68,7 @@ function LoginInner() {
             disabled={loading}
             className="w-full py-2 rounded bg-blue-600 hover:bg-blue-500 font-medium disabled:opacity-60"
           >
-            {loading ? "Signing in..." : "Login"}
+            {loading ? "Signing in…" : "Login"}
           </button>
 
           {error ? <p className="text-sm text-red-400">{error}</p> : null}
@@ -78,7 +80,7 @@ function LoginInner() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-white">Loading...</div>}>
+    <Suspense fallback={<div className="p-6 text-white">Loading…</div>}>
       <LoginInner />
     </Suspense>
   );
