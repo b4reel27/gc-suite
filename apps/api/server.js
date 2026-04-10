@@ -8,6 +8,14 @@ import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { randomUUID } from "crypto";
+import {
+  readPlans,
+  writePlans,
+  upsertSheetAndRevision,
+  filterSheets,
+  approveRevision,
+  supersedeRevision,
+} from "./plansStore.js";
 
 dotenv.config();
 
@@ -1606,6 +1614,96 @@ app.delete("/jsa/:jsaId", requireAuth, async (req, res) => {
     res.json({ ok: true, deleted: jsaId });
   } catch (e) {
     console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+/* PLANS */
+
+app.get("/projects/:projectId/plans", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    await requireProjectMember(projectId, req.userId);
+
+    const store = await readPlans(projectId);
+    const sheets = filterSheets(store, req.query);
+    res.json({ sheets });
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/projects/:projectId/plans", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) {
+      return apiError(res, 403, "Only GC users can upload plans");
+    }
+
+    const store = await readPlans(projectId);
+    const updated = upsertSheetAndRevision(store, req.body);
+    await writePlans(projectId, updated);
+
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    if (e.status === 400) return apiError(res, 400, e.message);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/projects/:projectId/plans/:sheetId/approve", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) {
+      return apiError(res, 403, "Only GC users can approve plans");
+    }
+
+    const { rev } = req.body;
+    if (rev === undefined) return apiError(res, 400, "rev is required");
+
+    const store = await readPlans(projectId);
+    const updated = approveRevision(store, sheetId, rev);
+    await writePlans(projectId, updated);
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    if (e.status === 404) return apiError(res, 404, e.message);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/projects/:projectId/plans/:sheetId/supersede", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) {
+      return apiError(res, 403, "Only GC users can manage plans");
+    }
+
+    const { rev } = req.body;
+    if (rev === undefined) return apiError(res, 400, "rev is required");
+
+    const store = await readPlans(projectId);
+    const updated = supersedeRevision(store, sheetId, rev);
+    await writePlans(projectId, updated);
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    if (e.status === 404) return apiError(res, 404, e.message);
     return handleThrownAccessError(res, e);
   }
 });
