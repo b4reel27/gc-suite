@@ -362,13 +362,6 @@ export default async function PlansPage({ params, searchParams }) {
         )}
       </div>
 
-      {!plans?.length && token ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
-          If your API doesn’t expose a plans list endpoint yet, that’s OK — the viewer still works
-          once you have a sheetId. We can add a clean <b>GET /projects/:projectId/plans</b> endpoint
-          to make this list fully live.
-        </div>
-      ) : null}
     </div>
   );
 }

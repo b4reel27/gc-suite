@@ -22,22 +22,22 @@ export default function ProjectHeader({ projectName, location }) {
   }
 
   return (
-    <div className="mb-4 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+    <div className="mb-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="min-w-0">
-          <div className="truncate text-2xl font-extrabold tracking-tight text-slate-900 sm:text-xl">
+          <div className="truncate text-xl font-extrabold tracking-tight text-slate-900">
             {projectName || "Project"}
           </div>
           {location ? (
-            <div className="mt-1 text-sm text-slate-500">{location}</div>
+            <div className="mt-0.5 text-sm text-slate-500">{location}</div>
           ) : null}
         </div>
 
         <Link
           href="/projects"
-          className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 sm:w-auto sm:text-sm"
+          className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 sm:w-auto"
         >
-          <span className="!text-slate-700">Change Project</span>
+          Change Project
         </Link>
       </div>
 
@@ -51,15 +51,13 @@ export default function ProjectHeader({ projectName, location }) {
                 key={tab.path}
                 href={`/projects/${projectId}/${tab.path}`}
                 aria-current={active ? "page" : undefined}
-                className={`inline-flex min-h-[44px] items-center justify-center rounded-2xl border px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition focus:outline-none focus:ring-2 focus:ring-slate-300 ${
+                className={`inline-flex min-h-[40px] items-center justify-center rounded-xl border px-4 py-2 text-sm font-semibold whitespace-nowrap transition focus:outline-none focus:ring-2 focus:ring-slate-300 ${
                   active
-                    ? "border-slate-900 bg-slate-900 shadow-sm"
-                    : "border-slate-200 bg-white hover:bg-slate-50"
+                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                <span className={active ? "!text-white" : "!text-slate-700"}>
-                  {tab.label}
-                </span>
+                {tab.label}
               </Link>
             );
           })}

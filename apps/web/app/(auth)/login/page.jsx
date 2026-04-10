@@ -18,7 +18,6 @@ function LoginInner() {
     setError("");
 
     try {
-      // Call our own Next.js API route (same-origin — no CORS issues)
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -31,14 +30,13 @@ function LoginInner() {
         throw new Error(data?.error || "Login failed");
       }
 
-      // Store token for client-side API calls (cookie is set by the route)
       localStorage.setItem("token", data.token);
       if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
 
       router.replace(next);
     } catch (err) {
       if (err.message === "Failed to fetch") {
-        setError("Cannot reach the server. Please try again in a moment.");
+        setError("Cannot reach the server. Please try again.");
       } else {
         setError(err.message || "Login failed");
       }
@@ -48,31 +46,42 @@ function LoginInner() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
-      <div className="w-full max-w-md p-6 rounded-xl bg-slate-800 border border-slate-700 shadow">
-        <h1 className="text-2xl font-semibold mb-2">GC Suite</h1>
-        <p className="text-slate-300 mb-6">Sign in to continue.</p>
+    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-extrabold tracking-tight text-white">GC Suite</h1>
+          <p className="mt-2 text-sm text-slate-400">Sign in to your account</p>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            placeholder="Email"
-            required
-            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700"
-          />
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-400">
+                Email address
+              </label>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                placeholder="you@company.com"
+                required
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2 rounded bg-blue-600 hover:bg-blue-500 font-medium disabled:opacity-60"
-          >
-            {loading ? "Signing in…" : "Login"}
-          </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:opacity-60"
+            >
+              {loading ? "Signing in…" : "Sign In"}
+            </button>
 
-          {error ? <p className="text-sm text-red-400">{error}</p> : null}
-        </form>
+            {error ? (
+              <p className="rounded-lg bg-red-950 px-3 py-2 text-sm text-red-400">{error}</p>
+            ) : null}
+          </form>
+        </div>
       </div>
     </main>
   );
@@ -80,7 +89,7 @@ function LoginInner() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-white">Loading…</div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">Loading…</div>}>
       <LoginInner />
     </Suspense>
   );

@@ -96,19 +96,18 @@ export default function AddSheetPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
         <Link
           href={`/projects/${projectId}/plans`}
-          className="text-sm text-slate-600 hover:underline"
+          className="text-sm font-medium text-slate-600 hover:text-slate-900"
         >
           ← Back to Plans
         </Link>
 
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">Add Sheet</h1>
-
-        <p className="mt-1 text-sm text-slate-600">
-          Upload a PDF. We’ll auto-create the drawing log row + revision.
+        <h1 className="mt-3 text-2xl font-bold text-slate-900">Add Sheet</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Upload a PDF — we’ll log the sheet + revision automatically.
         </p>
       </div>
 
@@ -118,12 +117,12 @@ export default function AddSheetPage() {
         </div>
       ) : null}
 
-      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="text-xs font-semibold text-slate-600">Sheet No</label>
+            <label className="block text-xs font-semibold text-slate-600">Sheet No</label>
             <input
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
               value={sheetNo}
               onChange={(e) => setSheetNo(e.target.value)}
               placeholder="A1.01"
@@ -131,11 +130,11 @@ export default function AddSheetPage() {
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-600">
-              Sheet ID (optional)
+            <label className="block text-xs font-semibold text-slate-600">
+              Sheet ID <span className="font-normal text-slate-400">(optional)</span>
             </label>
             <input
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
               value={sheetId}
               onChange={(e) => setSheetId(e.target.value)}
               placeholder="A101"
@@ -144,62 +143,68 @@ export default function AddSheetPage() {
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-slate-600">Title</label>
+          <label className="block text-xs font-semibold text-slate-600">Title</label>
           <input
-            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Floor Plan"
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="text-xs font-semibold text-slate-600">Discipline</label>
+            <label className="block text-xs font-semibold text-slate-600">Discipline</label>
             <select
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
               value={discipline}
               onChange={(e) => setDiscipline(e.target.value)}
             >
               {["ARCH", "STRUCT", "ELEC", "MECH", "CIVIL", "PLUMB", "FIRE", "GEN"].map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
+                <option key={d} value={d}>{d}</option>
               ))}
             </select>
           </div>
 
-          <div className="flex items-end gap-2">
+          <div className="flex items-center gap-2 pt-5">
             <input
               id="makeCurrent"
               type="checkbox"
-              className="h-4 w-4"
+              className="h-4 w-4 rounded"
               checked={makeCurrent}
               onChange={(e) => setMakeCurrent(e.target.checked)}
             />
             <label htmlFor="makeCurrent" className="text-sm text-slate-700">
-              Set this upload as <b>Current</b> (else Pending Review)
+              Mark as <span className="font-semibold">Current</span> revision
             </label>
           </div>
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-slate-600">PDF</label>
+          <label className="block text-xs font-semibold text-slate-600">PDF File</label>
           <input
             type="file"
             accept="application/pdf"
-            className="mt-1 block w-full text-sm"
+            className="mt-1 block w-full text-sm text-slate-700"
             onChange={(e) => setPdf(e.target.files?.[0] || null)}
           />
         </div>
 
-        <button
-          onClick={upload}
-          disabled={saving || !pdf}
-          className="w-full rounded-xl bg-slate-900 px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
-        >
-          {saving ? "Uploading..." : "Upload PDF"}
-        </button>
+        <div className="flex gap-3 pt-1">
+          <button
+            onClick={upload}
+            disabled={saving || !pdf}
+            className="flex-1 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+          >
+            {saving ? "Uploading…" : "Upload PDF"}
+          </button>
+          <Link
+            href={`/projects/${projectId}/plans`}
+            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Cancel
+          </Link>
+        </div>
       </div>
     </div>
   );
