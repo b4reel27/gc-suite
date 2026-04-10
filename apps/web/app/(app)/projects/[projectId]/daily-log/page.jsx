@@ -639,18 +639,24 @@ export default function DailyLogPage() {
     let cancelled = false;
     async function load() {
       setLoadError("");
+      // Load project name first so the header always shows correctly
       try {
-        const [projects, todayLog] = await Promise.all([
-          apiFetch(`/projects`),
-          apiFetch(`/projects/${projectId}/daily-log/today`),
-        ]);
+        const projects = await apiFetch(`/projects`);
         if (cancelled) return;
         const p = projects.find((x) => x.id === projectId);
         if (p) { setProjectName(p.name || ""); setProjectLoc(p.location || ""); }
+      } catch (e) {
+        if (cancelled) return;
+        // Non-fatal — header just shows "Project"
+      }
+      // Load today's log separately so a DB error doesn't wipe the project name
+      try {
+        const todayLog = await apiFetch(`/projects/${projectId}/daily-log/today`);
+        if (cancelled) return;
         setLog(todayLog);
       } catch (e) {
         if (cancelled) return;
-        setLoadError(e.message || "Failed to load");
+        setLoadError(e.message || "Failed to load daily log");
       }
     }
     if (projectId) load();
