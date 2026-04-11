@@ -53,6 +53,60 @@ function fmtTime(dateStr?: string) {
 function statusUpper(v?: string) { return String(v || "").trim().toUpperCase(); }
 function prettyStatus(v?: string) { return statusUpper(v).replaceAll("_", " "); }
 
+// ── Weather ───────────────────────────────────────────────────────────────────
+type WeatherData = { temp: number; condition: string; icon: string; wind: number };
+
+function wmoToCondition(code: number): { condition: string; icon: string } {
+  if (code === 0) return { condition: "Clear", icon: "☀️" };
+  if (code <= 2) return { condition: "Partly Cloudy", icon: "⛅" };
+  if (code === 3) return { condition: "Overcast", icon: "☁️" };
+  if (code <= 48) return { condition: "Foggy", icon: "🌫️" };
+  if (code <= 55) return { condition: "Drizzle", icon: "🌦️" };
+  if (code <= 65) return { condition: "Rain", icon: "🌧️" };
+  if (code <= 75) return { condition: "Snow", icon: "❄️" };
+  if (code <= 82) return { condition: "Showers", icon: "🌦️" };
+  if (code <= 86) return { condition: "Snow Showers", icon: "🌨️" };
+  return { condition: "Thunderstorm", icon: "⛈️" };
+}
+
+function useWeather() {
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [weatherError, setWeatherError] = useState("");
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          const url =
+            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+            `&current=temperature_2m,weather_code,wind_speed_10m` +
+            `&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1`;
+          const res = await fetch(url, { cache: "no-store" });
+          const data = await res.json();
+          const cur = data?.current;
+          if (!cur) return;
+          const { condition, icon } = wmoToCondition(cur.weather_code ?? 0);
+          setWeather({
+            temp: Math.round(cur.temperature_2m),
+            condition,
+            icon,
+            wind: Math.round(cur.wind_speed_10m),
+          });
+        } catch {
+          setWeatherError("unavailable");
+        }
+      },
+      () => setWeatherError("denied"),
+      { timeout: 8000 }
+    );
+  }, []);
+
+  return { weather, weatherError };
+}
+
 function isOpenIssue(status?: string) {
   return ["OPEN", "IN_PROGRESS", "DONE"].includes(statusUpper(status));
 }
@@ -80,6 +134,8 @@ async function fetchJson<T>(url: string, headers: Record<string, string>): Promi
 }
 
 export default function DashboardPage() {
+  const { weather } = useWeather();
+
   const [projectId, setProjectId] = useState("");
   const [project, setProject] = useState<Project | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -175,8 +231,22 @@ export default function DashboardPage() {
 
       {/* ── Date + Project Banner ── */}
       <div className="rounded-2xl bg-slate-900 p-5 text-white">
-        <div className="text-sm font-semibold text-slate-400">{dayName}</div>
-        <div className="mt-0.5 text-2xl font-extrabold tracking-tight">{monthDay}</div>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold text-slate-400">{dayName}</div>
+            <div className="mt-0.5 text-2xl font-extrabold tracking-tight">{monthDay}</div>
+          </div>
+          {weather ? (
+            <div className="text-right">
+              <div className="flex items-center justify-end gap-1.5">
+                <span className="text-2xl leading-none">{weather.icon}</span>
+                <span className="text-2xl font-extrabold">{weather.temp}°</span>
+              </div>
+              <div className="mt-0.5 text-xs text-slate-400">{weather.condition}</div>
+              <div className="text-xs text-slate-500">{weather.wind} mph wind</div>
+            </div>
+          ) : null}
+        </div>
         <div className="mt-3 border-t border-slate-700 pt-3">
           <div className="text-base font-bold">{projectName}</div>
           {projectLocation ? <div className="text-sm text-slate-400">{projectLocation}</div> : null}
