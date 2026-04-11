@@ -304,6 +304,16 @@ async function logActivity(projectId, userName, action, type, title) {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS daily_logs_project_id_idx ON daily_logs(project_id)
   `);
+
+  // Drop the unique-per-day constraint so users can file a log and start a fresh
+  // one on the same calendar date (the /today endpoint already filters by status).
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE daily_logs
+        DROP CONSTRAINT IF EXISTS daily_logs_project_id_created_by_user_id_log_date_key;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END $$;
+  `).catch(() => {});
 })().catch((e) => {
   console.error("Startup error:", e);
   process.exit(1);
