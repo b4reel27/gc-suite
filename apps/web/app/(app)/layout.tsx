@@ -2,20 +2,28 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
+const PROJECT_TABS = [
+  { label: "Plans",     path: "plans" },
+  { label: "Issues",    path: "punch" },
+  { label: "Schedule",  path: "schedule" },
+  { label: "Forms",     path: "forms" },
+  { label: "Daily Log", path: "daily-log" },
+];
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [activeProjectId, setActiveProjectId] = useState("");
-  const [projectName, setProjectName] = useState("");
+  const [projectName, setProjectName]         = useState("");
+  const pathname = usePathname();
 
   useEffect(() => {
     const id = localStorage.getItem("activeProjectId") || "";
     setActiveProjectId(id);
-
     if (!id) return;
 
-    // Try to get project name from stored user data or the API
     const token = localStorage.getItem("token") || "";
     if (!token || !API_URL) return;
 
@@ -31,8 +39,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, []);
 
-  const plansHref = activeProjectId ? `/projects/${activeProjectId}/plans` : "/projects";
-
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -43,53 +49,77 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-900">
       <div className="mx-auto w-full max-w-7xl px-3 py-3 sm:px-4 sm:py-4">
-        <div className="grid gap-3 lg:grid-cols-[220px_1fr] lg:gap-4">
+        <div className="grid gap-3 lg:grid-cols-[240px_1fr] lg:gap-4">
 
-          {/* Sidebar */}
+          {/* ── Sidebar ──────────────────────────────────────────────────── */}
           <aside className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+
+            {/* Brand */}
             <div>
-              <div className="text-2xl font-extrabold tracking-tight text-slate-900">
-                GC Suite
-              </div>
-              <div className="mt-0.5 text-xs font-medium text-slate-400 uppercase tracking-wide">
+              <div className="text-2xl font-extrabold tracking-tight text-slate-900">GC Suite</div>
+              <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
                 Command Center
               </div>
             </div>
 
-            <nav className="space-y-1">
+            {/* Top nav — side by side */}
+            <div className="grid grid-cols-2 gap-2">
               <Link
-                className="block rounded-xl px-3 py-2.5 text-base font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
                 href="/dashboard"
+                className={`rounded-xl border px-3 py-3 text-center text-base font-bold transition ${
+                  pathname === "/dashboard"
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
               >
                 Dashboard
               </Link>
-
               <Link
-                className="block rounded-xl px-3 py-2.5 text-base font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
                 href="/projects"
+                className={`rounded-xl border px-3 py-3 text-center text-base font-bold transition ${
+                  pathname === "/projects"
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
               >
                 Projects
               </Link>
-            </nav>
+            </div>
 
-            {/* Active project indicator */}
+            {/* Active project + sub-nav */}
             {activeProjectId ? (
-              <Link
-                href={plansHref}
-                className="group rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 transition hover:border-emerald-300 hover:bg-emerald-100"
-              >
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-600">
                   Active Project
                 </div>
-                <div className="mt-0.5 truncate text-sm font-semibold text-emerald-900">
+                <div className="mb-3 truncate text-sm font-bold text-emerald-900">
                   {projectName || "Loading…"}
                 </div>
-              </Link>
+                <nav className="space-y-0.5">
+                  {PROJECT_TABS.map((tab) => {
+                    const href = `/projects/${activeProjectId}/${tab.path}`;
+                    const active = pathname?.includes(`/${tab.path}`);
+                    return (
+                      <Link
+                        key={tab.path}
+                        href={href}
+                        className={`block rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                          active
+                            ? "bg-emerald-700 text-white"
+                            : "text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
+                        }`}
+                      >
+                        {tab.label}
+                      </Link>
+                    );
+                  })}
+                </nav>
+              </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
-                No active project. Choose one in{" "}
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                No active project.{" "}
                 <Link href="/projects" className="font-semibold text-slate-700 underline">
-                  Projects
+                  Choose one
                 </Link>
                 .
               </div>
@@ -106,10 +136,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </aside>
 
-          {/* Main content */}
+          {/* ── Main content ─────────────────────────────────────────────── */}
           <main className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             {children}
           </main>
+
         </div>
       </div>
     </div>
