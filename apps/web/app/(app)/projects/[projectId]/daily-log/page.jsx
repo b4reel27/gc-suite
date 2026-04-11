@@ -119,56 +119,84 @@ function EntryCard({ entry, apiBase }) {
 // ─── Voice Recorder ───────────────────────────────────────────────────────────
 
 function VoiceRecorder({ onSave, onCancel }) {
-  const recognitionRef  = useRef(null);
-  const accumulatedRef  = useRef("");
-  const [active, setActive]   = useState(false);
-  const [display, setDisplay] = useState("");
+  const recognitionRef = useRef(null);
+  const accumulatedRef = useRef("");
+  const activeRef      = useRef(false); // imperative flag — avoids stale closures
+  const restartTimer   = useRef(null);
+
+  const [active, setActive]     = useState(false);
+  const [display, setDisplay]   = useState("");
   const [supported, setSupported] = useState(true);
 
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) setSupported(false);
+    // Cleanup on unmount
+    return () => {
+      activeRef.current = false;
+      clearTimeout(restartTimer.current);
+      recognitionRef.current?.abort();
+    };
   }, []);
 
-  function startRecording() {
+  function startSession() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-
-    accumulatedRef.current = "";
-    setDisplay("");
+    if (!SR || !activeRef.current) return;
 
     const rec = new SR();
-    rec.continuous      = true;
-    rec.interimResults  = true;
-    rec.lang            = "en-US";
+    // continuous:false + interimResults:false = one utterance per session,
+    // final result only — fixes Android Chrome double-capture bug
+    rec.continuous     = false;
+    rec.interimResults = false;
+    rec.lang           = "en-US";
+    rec.maxAlternatives = 1;
 
     rec.onresult = (event) => {
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          accumulatedRef.current += event.results[i][0].transcript + " ";
-        } else {
-          interim += event.results[i][0].transcript;
-        }
+      const transcript = event.results[0]?.[0]?.transcript || "";
+      if (transcript) {
+        accumulatedRef.current = (accumulatedRef.current + " " + transcript).trim();
+        setDisplay(accumulatedRef.current);
       }
-      setDisplay(accumulatedRef.current + interim);
     };
 
-    rec.onerror = () => setActive(false);
-    rec.onend   = () => setActive(false);
+    rec.onend = () => {
+      // Auto-restart so the user can keep speaking hands-free
+      if (activeRef.current) {
+        restartTimer.current = setTimeout(startSession, 150);
+      }
+    };
+
+    rec.onerror = (e) => {
+      // no-speech / audio-capture are non-fatal on mobile — just restart
+      if (activeRef.current && (e.error === "no-speech" || e.error === "audio-capture")) {
+        restartTimer.current = setTimeout(startSession, 300);
+      } else {
+        activeRef.current = false;
+        setActive(false);
+      }
+    };
 
     recognitionRef.current = rec;
-    rec.start();
+    try { rec.start(); } catch { /* ignore start() if already running */ }
+  }
+
+  function startRecording() {
+    accumulatedRef.current = "";
+    setDisplay("");
+    activeRef.current = true;
     setActive(true);
+    startSession();
   }
 
   function stopRecording() {
+    activeRef.current = false;
+    clearTimeout(restartTimer.current);
     recognitionRef.current?.stop();
     setActive(false);
   }
 
   function save() {
-    const transcript = (accumulatedRef.current || display).trim();
+    const transcript = accumulatedRef.current.trim() || display.trim();
     if (transcript) onSave(transcript);
   }
 
