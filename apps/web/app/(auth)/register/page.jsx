@@ -49,8 +49,19 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-      <div className="w-full max-w-sm">
+    <main
+      className="relative flex min-h-screen items-center justify-center px-4"
+      style={{
+        backgroundImage: "url('/login-bg.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}
+    >
+      {/* Dark overlay */}
+      <div className="absolute inset-0 bg-slate-950/75" />
+
+      <div className="relative z-10 w-full max-w-sm">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-extrabold tracking-tight text-white">GC Suite</h1>
           <p className="mt-2 text-sm text-slate-400">Create your account</p>
