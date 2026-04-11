@@ -8,9 +8,9 @@ export default function ProjectLayout({ children }) {
 
   const actions = [
     {
-      label: "New Issue",
-      icon: "📸",
-      href: `/projects/${projectId}/punch?entry=quick`,
+      label: "Forms",
+      icon: "📋",
+      href: `/projects/${projectId}/forms`,
     },
     {
       label: "New Schedule",
@@ -20,7 +20,24 @@ export default function ProjectLayout({ children }) {
     {
       label: "Add Photo",
       icon: "📷",
-      href: `/projects/${projectId}/punch?entry=photo`,
+      subLabel: "Add Photo to…",
+      subActions: [
+        {
+          label: "Issue",
+          icon: "⚠️",
+          href: `/projects/${projectId}/punch?entry=photo`,
+        },
+        {
+          label: "Schedule Item",
+          icon: "📅",
+          href: `/projects/${projectId}/schedule?entry=photo`,
+        },
+        {
+          label: "Daily Log",
+          icon: "📝",
+          href: `/projects/${projectId}/daily-log`,
+        },
+      ],
     },
     {
       label: "Daily Log",
