@@ -271,13 +271,71 @@ function VoiceRecorder({ onSave, onCancel }) {
   );
 }
 
+// ─── Entry parser — auto-fills compile fields from logged entries ─────────────
+
+function parseEntriesForSummary(entries) {
+  const texts = entries
+    .filter((e) => e.content || e.caption)
+    .map((e) => (e.content || e.caption || "").trim())
+    .filter(Boolean);
+
+  if (!texts.length) return { weather: "", manpower_count: "", manpower_detail: "", narrative: "" };
+
+  const all = texts.join(" ");
+
+  // Weather — find first entry mentioning weather-related terms
+  let weather = "";
+  const wxRx = /rain|sunny|sun|clear|cloud|hot|cold|wind|storm|thunder|fog|humid|overcast|\d+\s*°|\d+\s*degree/i;
+  for (const t of texts) {
+    if (wxRx.test(t)) { weather = t.length > 80 ? t.slice(0, 80) + "…" : t; break; }
+  }
+
+  // Manpower count — "12 guys on site", "18 men", "6 workers", etc.
+  let manpower_count = "";
+  const mpRx = /\b(\d{1,3})\s*(guys?|men|man|workers?|people|crew|hands?|personnel|total|on[\s-]?site)\b/i;
+  const mpMatch = all.match(mpRx);
+  if (mpMatch) manpower_count = mpMatch[1];
+
+  // Trades breakdown — "5 electricians", "concrete 3", "4 framers", etc.
+  const tradeMap = {};
+  const TRADES = "electrician|plumber|concrete|framer|carpenter|hvac|mechanical|steel|rebar|drywall|painter|laborer|mason|tile|roofer|glass|finish|surveyor|inspector|landscap|demo|excavat";
+  const rx1 = new RegExp(`\\b(\\d+)\\s*(${TRADES})[a-z]*`, "gi");
+  const rx2 = new RegExp(`(${TRADES})[a-z]*\\s+(\\d+)`, "gi");
+  let m;
+  while ((m = rx1.exec(all)) !== null) {
+    const k = m[2].charAt(0).toUpperCase() + m[2].slice(1).toLowerCase();
+    tradeMap[k] = m[1];
+  }
+  while ((m = rx2.exec(all)) !== null) {
+    const k = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
+    if (!tradeMap[k]) tradeMap[k] = m[2];
+  }
+  const manpower_detail = Object.entries(tradeMap)
+    .map(([t, n]) => `${t} ${n}`)
+    .join(", ");
+
+  // Narrative — join all entry text into a readable summary
+  const narrative = texts
+    .slice(0, 10)
+    .map((t) => t.charAt(0).toUpperCase() + t.slice(1).replace(/\.?\s*$/, ""))
+    .join(". ")
+    .slice(0, 700);
+
+  return { weather, manpower_count, manpower_detail, narrative };
+}
+
 // ─── Compile Screen ───────────────────────────────────────────────────────────
 
 function CompileScreen({ log, apiBase, onDone, onBack }) {
-  const [weather, setWeather]           = useState(log.weather || "");
-  const [manpowerCount, setMpCount]     = useState(log.manpower_count || "");
-  const [manpowerDetail, setMpDetail]   = useState(log.manpower_detail || "");
-  const [narrative, setNarrative]       = useState(log.narrative || "");
+  // Pre-fill from log entries; user can edit freely before finalizing
+  const [parsed] = useState(() => parseEntriesForSummary(
+    Array.isArray(log.entries) ? log.entries : []
+  ));
+
+  const [weather, setWeather]         = useState(log.weather         || parsed.weather);
+  const [manpowerCount, setMpCount]   = useState(log.manpower_count  != null ? String(log.manpower_count) : parsed.manpower_count);
+  const [manpowerDetail, setMpDetail] = useState(log.manpower_detail || parsed.manpower_detail);
+  const [narrative, setNarrative]     = useState(log.narrative       || parsed.narrative);
 
   // {[entryId]: 'issue' | 'schedule' | 'tomorrow' | null}
   const [tags, setTags] = useState({});
