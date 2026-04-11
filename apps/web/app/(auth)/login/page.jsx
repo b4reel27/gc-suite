@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -9,6 +10,7 @@ function LoginInner() {
   const next = searchParams.get("next") || "/dashboard";
 
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -21,14 +23,12 @@ function LoginInner() {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data?.error || "Login failed");
-      }
+      if (!res.ok) throw new Error(data?.error || "Login failed");
 
       localStorage.setItem("token", data.token);
       if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
@@ -65,6 +65,22 @@ function LoginInner() {
                 type="email"
                 placeholder="you@company.com"
                 required
+                autoComplete="email"
+                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-400">
+                Password
+              </label>
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
                 className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
               />
             </div>
@@ -81,6 +97,13 @@ function LoginInner() {
               <p className="rounded-lg bg-red-950 px-3 py-2 text-sm text-red-400">{error}</p>
             ) : null}
           </form>
+
+          <div className="mt-5 border-t border-slate-800 pt-4 text-center text-sm text-slate-500">
+            Don&apos;t have an account?{" "}
+            <Link href="/register" className="font-semibold text-white hover:underline">
+              Create one
+            </Link>
+          </div>
         </div>
       </div>
     </main>
@@ -89,7 +112,11 @@ function LoginInner() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">Loading…</div>}>
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400">
+        Loading…
+      </div>
+    }>
       <LoginInner />
     </Suspense>
   );

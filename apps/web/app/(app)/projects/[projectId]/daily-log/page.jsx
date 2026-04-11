@@ -598,6 +598,125 @@ function CompileScreen({ log, apiBase, onDone, onBack }) {
   );
 }
 
+// ─── Export helpers ───────────────────────────────────────────────────────────
+
+function csvEscape(val) {
+  const s = String(val ?? "").replace(/"/g, '""');
+  return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s}"` : s;
+}
+
+function exportCSV(log, projectName) {
+  const entries = Array.isArray(log.entries) ? log.entries : [];
+  const checklist = Array.isArray(log.tomorrow_checklist) ? log.tomorrow_checklist : [];
+  const dateStr = log.log_date
+    ? new Date(log.log_date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+    : new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+  const rows = [
+    ["GC Suite – Daily Log"],
+    ["Project", projectName],
+    ["Date", dateStr],
+    [],
+    ["SUMMARY"],
+    ["Weather", log.weather || ""],
+    ["Manpower", log.manpower_count || ""],
+    ["Trades / Breakdown", log.manpower_detail || ""],
+    ["Narrative", log.narrative || ""],
+    [],
+    ["FIELD ENTRIES"],
+    ["Time", "Type", "Content / Caption"],
+    ...entries.map((e) => [e.time || "", e.type || "", e.content || e.caption || ""]),
+  ];
+
+  if (checklist.length > 0) {
+    rows.push([]);
+    rows.push(["TOMORROW'S CHECKLIST"]);
+    checklist.forEach((item) => rows.push(["", item]));
+  }
+
+  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `daily-log-${log.log_date || new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportPDF(log, projectName, projectLoc) {
+  const entries = Array.isArray(log.entries) ? log.entries : [];
+  const checklist = Array.isArray(log.tomorrow_checklist) ? log.tomorrow_checklist : [];
+  const dateStr = log.log_date
+    ? new Date(log.log_date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+    : new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+  const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Daily Log – ${esc(dateStr)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           max-width: 780px; margin: 0 auto; padding: 40px 28px; color: #0f172a; font-size: 14px; line-height: 1.5; }
+    h1 { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+    .meta { color: #64748b; font-size: 13px; margin-bottom: 28px; }
+    .section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+                     color: #94a3b8; margin: 22px 0 8px; border-top: 1px solid #e2e8f0; padding-top: 14px; }
+    .kv { display: flex; gap: 12px; margin-bottom: 6px; }
+    .kv .k { font-weight: 600; color: #475569; min-width: 120px; flex-shrink: 0; }
+    .narrative { background: #f8fafc; border-radius: 10px; padding: 14px; line-height: 1.7; margin-top: 6px; }
+    .entry { border-left: 3px solid #e2e8f0; padding: 6px 0 6px 14px; margin-bottom: 10px; }
+    .entry-meta { font-size: 11px; color: #94a3b8; margin-bottom: 3px; }
+    .entry-content { color: #1e293b; }
+    .check { display: flex; gap: 8px; margin-bottom: 5px; }
+    .check-icon { color: #10b981; font-weight: 700; }
+    footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid #e2e8f0;
+             font-size: 11px; color: #94a3b8; text-align: center; }
+    @media print { body { padding: 20px; } }
+  </style>
+</head>
+<body>
+  <h1>Daily Log</h1>
+  <div class="meta">${esc(projectName)}${projectLoc ? " &middot; " + esc(projectLoc) : ""} &middot; ${esc(dateStr)}</div>
+
+  <div class="section-label">Day Summary</div>
+  ${log.weather ? `<div class="kv"><span class="k">Weather</span> <span>${esc(log.weather)}</span></div>` : ""}
+  ${log.manpower_count ? `<div class="kv"><span class="k">Manpower</span> <span>${esc(log.manpower_count)} on site</span></div>` : ""}
+  ${log.manpower_detail ? `<div class="kv"><span class="k">Trades</span> <span>${esc(log.manpower_detail)}</span></div>` : ""}
+  ${log.narrative ? `<div class="section-label">Narrative</div><div class="narrative">${esc(log.narrative)}</div>` : ""}
+
+  ${entries.length > 0 ? `
+  <div class="section-label">Field Entries (${entries.length})</div>
+  ${entries.map((e) => `
+    <div class="entry">
+      <div class="entry-meta">${esc(prettyTime(e.time))}${e.type === "voice" ? " &middot; Voice memo" : e.type === "photo" ? " &middot; Photo" : ""}</div>
+      <div class="entry-content">${esc(e.content || e.caption || "")}</div>
+    </div>`).join("")}
+  ` : ""}
+
+  ${checklist.length > 0 ? `
+  <div class="section-label">Tomorrow's Checklist</div>
+  ${checklist.map((item) => `<div class="check"><span class="check-icon">✓</span> <span>${esc(item)}</span></div>`).join("")}
+  ` : ""}
+
+  <footer>Generated by GC Suite &middot; ${esc(dateStr)}</footer>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) { alert("Please allow popups to export PDF."); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 400);
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function DailyLogPage() {
@@ -766,9 +885,25 @@ export default function DailyLogPage() {
             </div>
           </div>
           {isCompiled ? (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-              Day Compiled
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                Day Compiled
+              </span>
+              <button
+                onClick={() => exportCSV(log, projectName)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                title="Export to Excel / CSV"
+              >
+                CSV
+              </button>
+              <button
+                onClick={() => exportPDF(log, projectName, projectLoc)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                title="Print / Save as PDF"
+              >
+                PDF
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => setView("compile")}

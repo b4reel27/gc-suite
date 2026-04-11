@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import { Pool } from "pg";
 import multer from "multer";
 import path from "path";
@@ -232,6 +233,15 @@ async function logActivity(projectId, userName, action, type, title) {
 
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
 
+  // Add password_hash to users if not present
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`);
+  // Add created_at to projects if not present
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
+  // Ensure project_members unique constraint exists for upsert
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS project_members_project_user_idx ON project_members(project_id, user_id)`).catch(() => {});
+  // Ensure project_members has company_id
+  await pool.query(`ALTER TABLE project_members ADD COLUMN IF NOT EXISTS company_id UUID`).catch(() => {});
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS project_activity (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -311,25 +321,79 @@ app.get("/health", (_req, res) => {
 
 /* AUTH */
 
-app.post("/auth/dev-login", async (req, res) => {
+// Register — create a new account
+app.post("/auth/register", async (req, res) => {
   try {
-    const { email } = req.body || {};
+    const { name, email, password } = req.body || {};
+    if (!email || !password) return apiError(res, 400, "email and password required");
+    if (password.length < 6) return apiError(res, 400, "Password must be at least 6 characters");
 
-    if (!email) return apiError(res, 400, "email required");
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM users WHERE lower(email) = lower($1)`, [email]
+    );
+    if (existing.length) return apiError(res, 409, "An account with that email already exists");
 
+    const hash = await bcrypt.hash(password, 10);
     const { rows } = await pool.query(
-      `SELECT id, email, name
-       FROM users
-       WHERE lower(email) = lower($1)`,
-      [email]
+      `INSERT INTO users (id, email, name, password_hash)
+       VALUES (gen_random_uuid(), $1, $2, $3)
+       RETURNING id, email, name`,
+      [email.toLowerCase().trim(), (name || "").trim() || null, hash]
     );
 
     const user = rows[0];
-    if (!user) return apiError(res, 404, "User not found");
+    const token = signSessionToken(user.id);
+    res.status(201).json({ token, user });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
+});
+
+// Login — email + password
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return apiError(res, 400, "email and password required");
+
+    const { rows } = await pool.query(
+      `SELECT id, email, name, password_hash FROM users WHERE lower(email) = lower($1)`,
+      [email]
+    );
+    const user = rows[0];
+    if (!user) return apiError(res, 401, "Invalid email or password");
+
+    // If no password set yet, allow login with any password and set it now (migration path)
+    if (!user.password_hash) {
+      const hash = await bcrypt.hash(password, 10);
+      await pool.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, user.id]);
+    } else {
+      const valid = await bcrypt.compare(password, user.password_hash);
+      if (!valid) return apiError(res, 401, "Invalid email or password");
+    }
 
     const token = signSessionToken(user.id);
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
+});
 
-    res.json({ token, user });
+// Dev-login kept for local dev only
+app.post("/auth/dev-login", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return apiError(res, 404, "Not found");
+  }
+  try {
+    const { email } = req.body || {};
+    if (!email) return apiError(res, 400, "email required");
+    const { rows } = await pool.query(
+      `SELECT id, email, name FROM users WHERE lower(email) = lower($1)`, [email]
+    );
+    const user = rows[0];
+    if (!user) return apiError(res, 404, "User not found");
+    res.json({ token: signSessionToken(user.id), user });
   } catch (e) {
     console.error(e);
     return apiError(res, 500, "Server error");
@@ -353,6 +417,88 @@ app.get("/projects", requireAuth, async (req, res) => {
   } catch (e) {
     console.error(e);
     return apiError(res, 500, "Server error");
+  }
+});
+
+app.post("/projects", requireAuth, async (req, res) => {
+  try {
+    const { name, location } = req.body || {};
+    if (!name?.trim()) return apiError(res, 400, "Project name is required");
+
+    const { rows } = await pool.query(
+      `INSERT INTO projects (id, name, location)
+       VALUES (gen_random_uuid(), $1, $2)
+       RETURNING id, name, location`,
+      [name.trim(), (location || "").trim() || null]
+    );
+    const project = rows[0];
+
+    // Creator becomes GC_ADMIN
+    await pool.query(
+      `INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'GC_ADMIN')`,
+      [project.id, req.userId]
+    );
+
+    res.status(201).json({ ...project, role: "GC_ADMIN" });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
+});
+
+// Add a user (by email) to a project
+app.post("/projects/:projectId/members", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { email, role } = req.body || {};
+    if (!email) return apiError(res, 400, "email is required");
+
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) return apiError(res, 403, "GC role required");
+
+    const validRole = String(role || "SUB").toUpperCase();
+    const allowedRoles = ["GC_ADMIN", "GC_SUPER", "GC_PM", "SUB_SUPER", "SUB_FOREMAN", "SUB"];
+    if (!allowedRoles.includes(validRole)) return apiError(res, 400, `Invalid role. Choose: ${allowedRoles.join(", ")}`);
+
+    const { rows: userRows } = await pool.query(
+      `SELECT id, name, email FROM users WHERE lower(email) = lower($1)`, [email]
+    );
+    if (!userRows.length) return apiError(res, 404, "No account found with that email. Ask them to register first.");
+
+    const targetUser = userRows[0];
+
+    await pool.query(
+      `INSERT INTO project_members (project_id, user_id, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+      [projectId, targetUser.id, validRole]
+    );
+
+    res.json({ ok: true, user: { id: targetUser.id, name: targetUser.name, email: targetUser.email, role: validRole } });
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// List project members
+app.get("/projects/:projectId/members", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    await requireProjectMember(projectId, req.userId);
+
+    const { rows } = await pool.query(
+      `SELECT u.id, u.name, u.email, pm.role
+       FROM project_members pm
+       JOIN users u ON u.id = pm.user_id
+       WHERE pm.project_id = $1
+       ORDER BY pm.role, u.name`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
   }
 });
 
