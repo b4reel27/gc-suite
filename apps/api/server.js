@@ -1293,6 +1293,34 @@ app.put("/daily-log/:logId", requireAuth, async (req, res) => {
   }
 });
 
+// Reopen a compiled log (set status back to IN_PROGRESS)
+app.post("/daily-log/:logId/reopen", requireAuth, async (req, res) => {
+  try {
+    const { logId } = req.params;
+    if (!isUuid(logId)) return apiError(res, 400, "Invalid logId");
+
+    const log = await getDailyLog(logId);
+    if (!log) return apiError(res, 404, "Log not found");
+
+    await requireProjectMember(log.project_id, req.userId);
+
+    if (log.created_by_user_id !== req.userId)
+      return apiError(res, 403, "Can only reopen your own log");
+
+    const { rows } = await pool.query(
+      `UPDATE daily_logs
+         SET status = 'IN_PROGRESS', compiled_at = NULL
+       WHERE id = $1 RETURNING *`,
+      [logId]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
 // Upload a photo and append it as an entry
 app.post(
   "/daily-log/:logId/photo",

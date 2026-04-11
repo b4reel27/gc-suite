@@ -963,6 +963,19 @@ export default function DailyLogPage() {
               </button>
               <button
                 onClick={async () => {
+                  try {
+                    const reopened = await apiFetch(`/daily-log/${log.id}/reopen`, { method: "POST" });
+                    setLog(reopened);
+                  } catch (e) {
+                    setActionError(e.message || "Failed to reopen log");
+                  }
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Reopen
+              </button>
+              <button
+                onClick={async () => {
                   setLog(null);
                   try {
                     const fresh = await apiFetch(`/projects/${projectId}/daily-log/today`);
