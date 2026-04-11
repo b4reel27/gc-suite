@@ -851,40 +851,45 @@ export default function FormsPage() {
       {/* Form Templates Rolodex */}
       <Card>
         <SectionLabel>Form Templates</SectionLabel>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {/* JSA — active */}
-          <div className="flex flex-col gap-3 rounded-2xl border border-black/10 bg-slate-50 p-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* JSA */}
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-sm font-bold text-slate-900">Job Safety Analysis</div>
                 <div className="mt-0.5 text-xs text-slate-500">JSA / JHA</div>
               </div>
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                Active
-              </span>
             </div>
             <p className="text-xs leading-relaxed text-slate-600">
-              Identify hazards, required PPE, work steps, and collect crew
-              acknowledgements before starting work.
+              Hazards, PPE, work steps, and crew acknowledgements before work begins.
             </p>
             <button
               onClick={openNew}
-              className="mt-auto w-full rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+              className="mt-auto w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
               + New JSA
             </button>
           </div>
 
-          {/* Coming soon placeholders */}
-          {["Daily Work Report", "Safety Inspection", "Toolbox Talk"].map((name) => (
-            <div
-              key={name}
-              className="flex flex-col gap-2 rounded-2xl border border-dashed border-slate-200 bg-white p-4 opacity-40"
-            >
-              <div className="text-sm font-bold text-slate-900">{name}</div>
-              <div className="text-xs text-slate-500">Coming soon</div>
+          {/* Daily Work Report — links to daily log */}
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-sm font-bold text-slate-900">Daily Work Report</div>
+                <div className="mt-0.5 text-xs text-slate-500">Field Log</div>
+              </div>
             </div>
-          ))}
+            <p className="text-xs leading-relaxed text-slate-600">
+              Notes, photos, and voice memos throughout the day. Compile into issues and schedule items at end of shift.
+            </p>
+            <a
+              href={`/projects/${projectId}/daily-log`}
+              className="mt-auto w-full rounded-xl bg-slate-900 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              Open Daily Log
+            </a>
+          </div>
+
         </div>
       </Card>
 

@@ -58,18 +58,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
             <nav className="space-y-1">
               <Link
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                className="block rounded-xl px-3 py-2.5 text-base font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
                 href="/dashboard"
               >
-                <span className="text-base">&#9632;</span>
                 Dashboard
               </Link>
 
               <Link
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                className="block rounded-xl px-3 py-2.5 text-base font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
                 href="/projects"
               >
-                <span className="text-base">&#9650;</span>
                 Projects
               </Link>
             </nav>

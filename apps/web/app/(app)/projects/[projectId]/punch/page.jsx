@@ -255,6 +255,7 @@ export default function PunchPage() {
   const [filter, setFilter] = useState("ALL");
   const [query, setQuery] = useState("");
   const [trade, setTrade] = useState("");
+  const [myCompanyOnly, setMyCompanyOnly] = useState(false);
 
   const [newTitle, setNewTitle] = useState("");
   const [newTrade, setNewTrade] = useState("");
@@ -394,6 +395,11 @@ export default function PunchPage() {
         setMe(meRes);
         setCompanies(Array.isArray(compRes) ? compRes : compRes?.items || []);
 
+        // Default subs to seeing only their company's items
+        if (meRes?.role && !isGcRole(meRes.role)) {
+          setMyCompanyOnly(true);
+        }
+
         await refreshIssues();
       } catch (e) {
         if (cancelled) return;
@@ -410,6 +416,7 @@ export default function PunchPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const myCompanyId = me?.company_id;
 
     return (items || []).filter((it) => {
       const status = statusUpper(it.status);
@@ -417,6 +424,9 @@ export default function PunchPage() {
       const statusOk = filter === "ALL" ? true : status === filter;
       const tradeOk = trade
         ? String(it.trade || "").toUpperCase() === trade.toUpperCase()
+        : true;
+      const companyOk = myCompanyOnly && myCompanyId
+        ? it.assigned_company_id === myCompanyId
         : true;
 
       const qOk = q
@@ -427,9 +437,9 @@ export default function PunchPage() {
             .includes(q)
         : true;
 
-      return statusOk && tradeOk && qOk;
+      return statusOk && tradeOk && companyOk && qOk;
     });
-  }, [items, filter, query, trade]);
+  }, [items, filter, query, trade, myCompanyOnly, me]);
 
   const stats = useMemo(() => {
     const list = items || [];
@@ -958,6 +968,24 @@ export default function PunchPage() {
         <div className="mb-4">
           <h2 className="text-lg font-bold text-slate-900">Filter Issues</h2>
         </div>
+
+        {/* My Company toggle — shown for subs */}
+        {me && !isGcRole(me.role) ? (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => setMyCompanyOnly((v) => !v)}
+              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+                myCompanyOnly
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${myCompanyOnly ? "bg-emerald-400" : "bg-slate-300"}`} />
+              {myCompanyOnly ? "My Company's Items" : "All Items"}
+            </button>
+          </div>
+        ) : null}
 
         <div className="grid gap-3 md:grid-cols-4">
           <div>
