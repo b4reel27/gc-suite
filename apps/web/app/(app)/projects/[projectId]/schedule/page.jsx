@@ -57,14 +57,19 @@ function statusBadgeClass(status) {
   return "bg-slate-100 text-slate-700 border-slate-200";
 }
 
-function StatCard({ title, value }) {
+function StatChip({ label, value, active, onClick }) {
+  const base = "flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-semibold transition";
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {title}
-      </div>
-      <div className="mt-2 text-2xl font-bold text-slate-900">{value}</div>
-    </div>
+    <button
+      onClick={onClick}
+      className={`${base} ${active
+        ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+      }`}
+    >
+      <span className="text-[11px] font-medium opacity-70">{label}</span>
+      <span>{value}</span>
+    </button>
   );
 }
 
@@ -584,12 +589,12 @@ export default function SchedulePage() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatCard title="Total" value={stats.total} />
-        <StatCard title="Open" value={stats.open} />
-        <StatCard title="Done" value={stats.done} />
-        <StatCard title="Verified" value={stats.verified} />
-        <StatCard title="Canceled" value={stats.canceled} />
+      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <StatChip label="All"      value={stats.total}    active={filter === "ALL"}      onClick={() => setFilter("ALL")} />
+        <StatChip label="Open"     value={stats.open}     active={filter === "OPEN"}     onClick={() => setFilter("OPEN")} />
+        <StatChip label="Done"     value={stats.done}     active={filter === "DONE"}     onClick={() => setFilter("DONE")} />
+        <StatChip label="Verified" value={stats.verified} active={filter === "VERIFIED"} onClick={() => setFilter("VERIFIED")} />
+        <StatChip label="Canceled" value={stats.canceled} active={filter === "CANCELED"} onClick={() => setFilter("CANCELED")} />
       </div>
 
       {iAmGC ? (

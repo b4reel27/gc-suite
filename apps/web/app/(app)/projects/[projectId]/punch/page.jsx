@@ -50,15 +50,26 @@ function statusBadgeClass(status) {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
-function StatCard({ title, value }) {
+function StatChip({ label, value, active, onClick }) {
+  const base = "flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-semibold transition";
+  if (onClick) {
+    return (
+      <button
+        onClick={onClick}
+        className={`${base} ${active
+          ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+          : "border-black/10 bg-white text-slate-600 hover:bg-slate-50"
+        }`}
+      >
+        <span className="text-[11px] font-medium opacity-70">{label}</span>
+        <span>{value}</span>
+      </button>
+    );
+  }
   return (
-    <div className="rounded-[24px] border border-black/10 bg-white p-4 shadow-sm">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-        {title}
-      </div>
-      <div className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
-        {value}
-      </div>
+    <div className={`${base} border-black/10 bg-white text-slate-500`}>
+      <span className="text-[11px] font-medium opacity-70">{label}</span>
+      <span>{value}</span>
     </div>
   );
 }
@@ -734,13 +745,13 @@ export default function PunchPage() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-        <StatCard title="Total" value={stats.total} />
-        <StatCard title="Open" value={stats.open} />
-        <StatCard title="In Progress" value={stats.inProgress} />
-        <StatCard title="Done" value={stats.done} />
-        <StatCard title="Verified" value={stats.verified} />
-        <StatCard title="Photos" value={stats.photos} />
+      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <StatChip label="All"        value={stats.total}      active={filter === "ALL"}         onClick={() => setFilter("ALL")} />
+        <StatChip label="Open"       value={stats.open}       active={filter === "OPEN"}        onClick={() => setFilter("OPEN")} />
+        <StatChip label="In Progress" value={stats.inProgress} active={filter === "IN_PROGRESS"} onClick={() => setFilter("IN_PROGRESS")} />
+        <StatChip label="Done"       value={stats.done}       active={filter === "DONE"}        onClick={() => setFilter("DONE")} />
+        <StatChip label="Verified"   value={stats.verified}   active={filter === "VERIFIED"}    onClick={() => setFilter("VERIFIED")} />
+        <StatChip label="Photos"     value={stats.photos} />
       </div>
 
       {iAmGC && isMobile ? (
