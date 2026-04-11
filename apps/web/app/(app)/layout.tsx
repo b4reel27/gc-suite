@@ -86,7 +86,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Link>
             </div>
 
-            {/* Active project + sub-nav */}
+            {/* Active project + horizontal pill sub-nav */}
             {activeProjectId ? (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-600">
@@ -95,7 +95,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="mb-3 truncate text-sm font-bold text-emerald-900">
                   {projectName || "Loading…"}
                 </div>
-                <nav className="space-y-0.5">
+                {/* Horizontal scrolling pills */}
+                <div className="flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {PROJECT_TABS.map((tab) => {
                     const href = `/projects/${activeProjectId}/${tab.path}`;
                     const active = pathname?.includes(`/${tab.path}`);
@@ -103,17 +104,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       <Link
                         key={tab.path}
                         href={href}
-                        className={`block rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                        className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                           active
-                            ? "bg-emerald-700 text-white"
-                            : "text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
+                            ? "border-emerald-700 bg-emerald-700 text-white"
+                            : "border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100"
                         }`}
                       >
                         {tab.label}
                       </Link>
                     );
                   })}
-                </nav>
+                </div>
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
