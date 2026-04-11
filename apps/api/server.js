@@ -1187,9 +1187,13 @@ app.get("/projects/:projectId/daily-log/today", requireAuth, async (req, res) =>
 
     const today = new Date().toISOString().slice(0, 10);
 
+    // Find an open (non-compiled) log for today. If only compiled ones exist,
+    // create a fresh one so the user can always start a new entry after filing.
     let { rows } = await pool.query(
       `SELECT * FROM daily_logs
-       WHERE project_id = $1 AND created_by_user_id = $2 AND log_date = $3`,
+       WHERE project_id = $1 AND created_by_user_id = $2 AND log_date = $3
+         AND status != 'COMPILED'
+       ORDER BY created_at DESC LIMIT 1`,
       [projectId, req.userId, today]
     );
 
