@@ -243,6 +243,106 @@ function parseScheduleNote(note) {
   };
 }
 
+// ─── Gantt View ───────────────────────────────────────────────────────────────
+
+const GANTT_STATUS_COLORS = {
+  OPEN:     "#f59e0b",
+  DONE:     "#a855f7",
+  VERIFIED: "#10b981",
+  CANCELED: "#94a3b8",
+};
+
+function GanttView({ items }) {
+  const dated = items
+    .map((it) => ({
+      ...it,
+      ds: new Date(it.start_at || it.date || it.due_date || null),
+      de: new Date(it.end_at || it.due_date || it.start_at || it.date || null),
+    }))
+    .filter((it) => !isNaN(it.ds));
+
+  if (dated.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-400">
+        No dated items to display on the Gantt.
+      </div>
+    );
+  }
+
+  const minDate = new Date(Math.min(...dated.map((i) => i.ds)));
+  const maxDate = new Date(Math.max(...dated.map((i) => (isNaN(i.de) ? i.ds : i.de))));
+  minDate.setDate(minDate.getDate() - 1);
+  maxDate.setDate(maxDate.getDate() + 2);
+  const totalDays = Math.max((maxDate - minDate) / 86400000, 1);
+
+  function pct(date) {
+    return Math.max(0, Math.min(100, ((date - minDate) / (maxDate - minDate)) * 100));
+  }
+
+  const monthLabels = [];
+  const cursor = new Date(minDate);
+  cursor.setDate(1);
+  while (cursor <= maxDate) {
+    monthLabels.push({
+      label: cursor.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
+      pct:   pct(cursor),
+    });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div style={{ minWidth: Math.max(600, totalDays * 14) + "px" }} className="p-4">
+        {/* Month axis */}
+        <div className="relative mb-3 h-5">
+          {monthLabels.map((m) => (
+            <span
+              key={m.label + m.pct}
+              className="absolute -translate-x-1/2 text-[10px] font-semibold text-slate-400"
+              style={{ left: `${m.pct}%` }}
+            >
+              {m.label}
+            </span>
+          ))}
+        </div>
+        {/* Rows */}
+        <div className="space-y-2">
+          {dated.map((it) => {
+            const left = pct(it.ds);
+            const right = pct(isNaN(it.de) || it.de <= it.ds ? new Date(+it.ds + 86400000) : it.de);
+            const width = Math.max(right - left, 1.5);
+            const color = GANTT_STATUS_COLORS[statusUpper(it.status)] || "#94a3b8";
+            return (
+              <div key={it.id} className="flex items-center gap-2">
+                <div className="w-28 flex-shrink-0 truncate text-xs font-medium text-slate-700" title={it.title}>
+                  {it.title}
+                </div>
+                <div className="relative flex-1" style={{ height: 24 }}>
+                  <div className="absolute inset-y-0 w-full rounded-full bg-slate-100" />
+                  <div
+                    className="absolute inset-y-1 rounded-full"
+                    style={{ left: `${left}%`, width: `${width}%`, backgroundColor: color }}
+                    title={`${fmtDate(it.ds)} – ${fmtDate(isNaN(it.de) ? it.ds : it.de)}`}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {/* Legend */}
+        <div className="mt-4 flex flex-wrap gap-3">
+          {Object.entries(GANTT_STATUS_COLORS).map(([s, c]) => (
+            <span key={s} className="flex items-center gap-1.5 text-[11px] text-slate-500">
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: c }} />
+              {s}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SchedulePage() {
   const { projectId } = useParams();
 
@@ -270,6 +370,7 @@ export default function SchedulePage() {
 
   const [filter, setFilter] = useState("ALL");
   const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState("list"); // "list" | "gantt"
 
   const apiBase = useMemo(() => getApiBase(), []);
 
@@ -757,6 +858,29 @@ export default function SchedulePage() {
         </div>
       )}
 
+      {/* View toggle */}
+      <div className="flex items-center gap-2">
+        {["list", "gantt"].map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => setViewMode(mode)}
+            className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+              viewMode === mode
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {mode === "list" ? "List" : "📅 Gantt"}
+          </button>
+        ))}
+      </div>
+
+      {viewMode === "gantt" ? (
+        <GanttView items={filtered} />
+      ) : null}
+
+      {viewMode === "list" && (
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-3">
           <div>
@@ -878,6 +1002,7 @@ export default function SchedulePage() {
           </div>
         ) : null}
       </div>
+      )}
     </div>
   );
 }

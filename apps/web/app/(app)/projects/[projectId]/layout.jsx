@@ -8,14 +8,19 @@ export default function ProjectLayout({ children }) {
 
   const actions = [
     {
-      label: "Forms",
-      icon: "📋",
-      href: `/projects/${projectId}/forms`,
+      label: "Daily Log",
+      icon: "📝",
+      href: `/projects/${projectId}/daily-log`,
     },
     {
-      label: "New Schedule",
-      icon: "📅",
-      href: `/projects/${projectId}/schedule?entry=quick`,
+      label: "New RFI",
+      icon: "📨",
+      href: `/projects/${projectId}/rfis`,
+    },
+    {
+      label: "Forms / JSA",
+      icon: "📋",
+      href: `/projects/${projectId}/forms`,
     },
     {
       label: "Add Photo",
@@ -38,11 +43,6 @@ export default function ProjectLayout({ children }) {
           href: `/projects/${projectId}/daily-log`,
         },
       ],
-    },
-    {
-      label: "Daily Log",
-      icon: "📝",
-      href: `/projects/${projectId}/daily-log`,
     },
   ];
 

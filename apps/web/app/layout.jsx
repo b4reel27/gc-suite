@@ -1,4 +1,5 @@
 import "./globals.css";
+import SwRegistrar from "./SwRegistrar";
 
 export const metadata = {
   title: "GC Suite",
@@ -23,6 +24,7 @@ export default function RootLayout({ children }) {
         }}
       >
         {children}
+        <SwRegistrar />
       </body>
     </html>
   );

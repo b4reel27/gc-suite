@@ -18,6 +18,8 @@ import {
   supersedeRevision,
 } from "./plansStore.js";
 
+import webpush from "web-push";
+
 dotenv.config();
 
 const app = express();
@@ -226,6 +228,31 @@ async function logActivity(projectId, userName, action, type, title) {
   }
 }
 
+/* PUSH NOTIFICATIONS */
+
+const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY  || "BH4nhUz7PnQ6BftU4S_mHBOrCxQP3Xn3pUagbKnZNlKy-eDwTDXIG_Ee91fwVhpLM-7NOONbfx1WUSYx-QD8QrQ";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "EhUTanTTnfRcAr6_SCuRTdzvBQSKse8Un1VgiD6CUrc";
+webpush.setVapidDetails("mailto:admin@gc-suite.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+
+async function sendPushToUser(userId, title, body, url = "/dashboard") {
+  try {
+    const { rows } = await pool.query(
+      `SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1`, [userId]
+    );
+    for (const sub of rows) {
+      const payload = JSON.stringify({ title, body, url });
+      await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload)
+        .catch(async (err) => {
+          if (err.statusCode === 410) {
+            await pool.query(`DELETE FROM push_subscriptions WHERE endpoint = $1`, [sub.endpoint]).catch(() => {});
+          }
+        });
+    }
+  } catch (e) {
+    console.error("sendPush error:", e);
+  }
+}
+
 /* STARTUP */
 
 (async () => {
@@ -303,6 +330,91 @@ async function logActivity(projectId, userName, action, type, title) {
 
   await pool.query(`
     CREATE INDEX IF NOT EXISTS daily_logs_project_id_idx ON daily_logs(project_id)
+  `);
+
+  // Plan pins on issues
+  await pool.query(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS plan_sheet_id TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS pin_x FLOAT`).catch(() => {});
+  await pool.query(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS pin_y FLOAT`).catch(() => {});
+
+  // RFIs
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rfis (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      rfi_number SERIAL,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      title TEXT NOT NULL,
+      question TEXT NOT NULL,
+      to_name TEXT,
+      due_date DATE,
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','ANSWERED','CLOSED')),
+      response TEXT,
+      responded_by_user_id UUID REFERENCES users(id),
+      responded_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS rfis_project_id_idx ON rfis(project_id)`);
+
+  // Push subscriptions
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      endpoint TEXT NOT NULL,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id, endpoint)
+    )
+  `);
+
+  // Generic form submissions (safety inspection, toolbox talk, etc.)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS form_submissions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      form_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','SUBMITTED')),
+      data JSONB NOT NULL DEFAULT '{}',
+      submitted_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS form_submissions_project_id_idx ON form_submissions(project_id)`);
+
+  // Submittal log
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submittals (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      spec_section TEXT,
+      title TEXT NOT NULL,
+      submittal_type TEXT NOT NULL DEFAULT 'Shop Drawing'
+        CHECK (submittal_type IN ('Shop Drawing','Sample','Product Data','O&M Manual','Other')),
+      submitted_by TEXT,
+      submitted_date DATE,
+      status TEXT NOT NULL DEFAULT 'Required'
+        CHECK (status IN ('Required','Submitted','Under Review','Approved','Rejected')),
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS submittals_project_id_idx ON submittals(project_id)`);
+
+  // RFI attachments
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rfi_attachments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      rfi_id UUID NOT NULL REFERENCES rfis(id) ON DELETE CASCADE,
+      file_url TEXT NOT NULL,
+      original_name TEXT,
+      uploaded_by_user_id UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
   `);
 
   // Drop the unique-per-day constraint so users can file a log and start a fresh
@@ -1955,6 +2067,368 @@ app.post(
 );
 
 /* ERROR HANDLER */
+
+// ─── Plan Pins ────────────────────────────────────────────────────────────────
+
+app.get("/projects/:projectId/plans/:sheetId/pins", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT i.id, i.title, i.trade, i.status, i.location, i.pin_x, i.pin_y, i.plan_sheet_id,
+              u.name AS created_by_name
+       FROM issues i
+       LEFT JOIN users u ON u.id = i.created_by_user_id
+       WHERE i.project_id = $1 AND i.plan_sheet_id = $2
+       ORDER BY i.created_at DESC`,
+      [projectId, sheetId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// Update POST /punch to accept pin fields (patched at end since original is earlier)
+// Pins are set via PUT on an existing issue:
+app.patch("/punch/:issueId/pin", requireAuth, async (req, res) => {
+  try {
+    const { issueId } = req.params;
+    if (!isUuid(issueId)) return apiError(res, 400, "Invalid issueId");
+    const issue = await getIssue(issueId);
+    if (!issue) return apiError(res, 404, "Issue not found");
+    await requireGcMembership(issue.project_id, req.userId);
+    const { plan_sheet_id, pin_x, pin_y } = req.body || {};
+    const { rows } = await pool.query(
+      `UPDATE issues SET plan_sheet_id=$2, pin_x=$3, pin_y=$4 WHERE id=$1 RETURNING *`,
+      [issueId, plan_sheet_id || null, pin_x ?? null, pin_y ?? null]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── RFIs ─────────────────────────────────────────────────────────────────────
+
+app.get("/projects/:projectId/rfis", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT r.*, u.name AS created_by_name, ru.name AS responded_by_name
+       FROM rfis r
+       LEFT JOIN users u ON u.id = r.created_by_user_id
+       LEFT JOIN users ru ON ru.id = r.responded_by_user_id
+       WHERE r.project_id = $1
+       ORDER BY r.created_at DESC`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/rfis", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { title, question, to_name, due_date } = req.body || {};
+    if (!title?.trim()) return apiError(res, 400, "title required");
+    if (!question?.trim()) return apiError(res, 400, "question required");
+    const { rows } = await pool.query(
+      `INSERT INTO rfis (project_id, created_by_user_id, title, question, to_name, due_date)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [projectId, req.userId, title.trim(), question.trim(), to_name?.trim() || null,
+       due_date || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/rfi/:rfiId", requireAuth, async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: existing } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!existing.length) return apiError(res, 404, "RFI not found");
+    const rfi = existing[0];
+    await requireProjectMember(rfi.project_id, req.userId);
+    const { title, question, to_name, due_date } = req.body || {};
+    const { rows } = await pool.query(
+      `UPDATE rfis SET title=COALESCE($2,title), question=COALESCE($3,question),
+       to_name=COALESCE($4,to_name), due_date=COALESCE($5,due_date) WHERE id=$1 RETURNING *`,
+      [rfiId, title?.trim()||null, question?.trim()||null, to_name?.trim()||null, due_date||null]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/rfi/:rfiId/respond", requireAuth, async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: existing } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!existing.length) return apiError(res, 404, "RFI not found");
+    const rfi = existing[0];
+    await requireProjectMember(rfi.project_id, req.userId);
+    const { response } = req.body || {};
+    if (!response?.trim()) return apiError(res, 400, "response required");
+    const { rows } = await pool.query(
+      `UPDATE rfis SET response=$2, status='ANSWERED', responded_by_user_id=$3,
+       responded_at=NOW() WHERE id=$1 RETURNING *`,
+      [rfiId, response.trim(), req.userId]
+    );
+    // Notify the RFI creator
+    await sendPushToUser(rfi.created_by_user_id, "RFI Answered", rfi.title);
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/rfi/:rfiId/close", requireAuth, async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: existing } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!existing.length) return apiError(res, 404, "RFI not found");
+    await requireGcMembership(existing[0].project_id, req.userId);
+    const { rows } = await pool.query(
+      `UPDATE rfis SET status='CLOSED' WHERE id=$1 RETURNING *`, [rfiId]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── Push Notifications ───────────────────────────────────────────────────────
+
+app.get("/push/vapid-key", (_req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+app.post("/push/subscribe", requireAuth, async (req, res) => {
+  try {
+    const { endpoint, keys } = req.body || {};
+    if (!endpoint || !keys?.p256dh || !keys?.auth) return apiError(res, 400, "Invalid subscription");
+    await pool.query(
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (user_id, endpoint) DO UPDATE SET p256dh=$3, auth=$4`,
+      [req.userId, endpoint, keys.p256dh, keys.auth]
+    );
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/push/unsubscribe", requireAuth, async (req, res) => {
+  try {
+    const { endpoint } = req.body || {};
+    await pool.query(`DELETE FROM push_subscriptions WHERE user_id=$1 AND endpoint=$2`,
+      [req.userId, endpoint]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── Form Submissions (Safety Inspection, Toolbox Talk, etc.) ─────────────────
+
+app.get("/projects/:projectId/form-submissions", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { form_type } = req.query;
+    const { rows } = await pool.query(
+      `SELECT f.*, u.name AS created_by_name
+       FROM form_submissions f
+       LEFT JOIN users u ON u.id = f.created_by_user_id
+       WHERE f.project_id=$1 ${form_type ? "AND f.form_type=$2" : ""}
+       ORDER BY f.created_at DESC LIMIT 100`,
+      form_type ? [projectId, form_type] : [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/form-submissions", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { form_type, data, status } = req.body || {};
+    if (!form_type) return apiError(res, 400, "form_type required");
+    const finalStatus = status === "SUBMITTED" ? "SUBMITTED" : "DRAFT";
+    const { rows } = await pool.query(
+      `INSERT INTO form_submissions (project_id, created_by_user_id, form_type, status, data, submitted_at)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6) RETURNING *`,
+      [projectId, req.userId, form_type, finalStatus, JSON.stringify(data || {}),
+       finalStatus === "SUBMITTED" ? new Date() : null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.get("/form-submission/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows } = await pool.query(`SELECT * FROM form_submissions WHERE id=$1`, [id]);
+    if (!rows.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(rows[0].project_id, req.userId);
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/form-submission/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows: existing } = await pool.query(`SELECT * FROM form_submissions WHERE id=$1`, [id]);
+    if (!existing.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(existing[0].project_id, req.userId);
+    const { data, status } = req.body || {};
+    const finalStatus = status === "SUBMITTED" ? "SUBMITTED" : (status === "DRAFT" ? "DRAFT" : existing[0].status);
+    const { rows } = await pool.query(
+      `UPDATE form_submissions SET data=COALESCE($2::jsonb,data), status=$3,
+       submitted_at=CASE WHEN $3='SUBMITTED' AND submitted_at IS NULL THEN NOW() ELSE submitted_at END
+       WHERE id=$1 RETURNING *`,
+      [id, data ? JSON.stringify(data) : null, finalStatus]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── Submittal Log ────────────────────────────────────────────────────────────
+
+app.get("/projects/:projectId/submittals", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT s.*, u.name AS created_by_name
+       FROM submittals s
+       LEFT JOIN users u ON u.id = s.created_by_user_id
+       WHERE s.project_id = $1
+       ORDER BY s.created_at DESC LIMIT 200`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/submittals", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { spec_section, title, submittal_type, submitted_by, submitted_date, status, notes } = req.body || {};
+    if (!title) return apiError(res, 400, "title required");
+    const validTypes = ["Shop Drawing","Sample","Product Data","O&M Manual","Other"];
+    const validStatuses = ["Required","Submitted","Under Review","Approved","Rejected"];
+    const { rows } = await pool.query(
+      `INSERT INTO submittals (project_id, created_by_user_id, spec_section, title, submittal_type, submitted_by, submitted_date, status, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [projectId, req.userId, spec_section || null, title,
+       validTypes.includes(submittal_type) ? submittal_type : "Shop Drawing",
+       submitted_by || null, normalizeDateInput(submitted_date),
+       validStatuses.includes(status) ? status : "Required", notes || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/submittal/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows: existing } = await pool.query(`SELECT * FROM submittals WHERE id=$1`, [id]);
+    if (!existing.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(existing[0].project_id, req.userId);
+    const { spec_section, title, submittal_type, submitted_by, submitted_date, status, notes } = req.body || {};
+    const validTypes = ["Shop Drawing","Sample","Product Data","O&M Manual","Other"];
+    const validStatuses = ["Required","Submitted","Under Review","Approved","Rejected"];
+    const { rows } = await pool.query(
+      `UPDATE submittals SET
+         spec_section   = COALESCE($2, spec_section),
+         title          = COALESCE($3, title),
+         submittal_type = COALESCE($4, submittal_type),
+         submitted_by   = COALESCE($5, submitted_by),
+         submitted_date = COALESCE($6, submitted_date),
+         status         = COALESCE($7, status),
+         notes          = COALESCE($8, notes)
+       WHERE id=$1 RETURNING *`,
+      [id, spec_section ?? null, title ?? null,
+       (submittal_type && validTypes.includes(submittal_type)) ? submittal_type : null,
+       submitted_by ?? null, submitted_date ? normalizeDateInput(submitted_date) : null,
+       (status && validStatuses.includes(status)) ? status : null, notes ?? null]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/submittal/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows } = await pool.query(`SELECT * FROM submittals WHERE id=$1`, [id]);
+    if (!rows.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(rows[0].project_id, req.userId);
+    await pool.query(`DELETE FROM submittals WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── RFI Attachments ──────────────────────────────────────────────────────────
+
+app.get("/rfi/:rfiId/attachments", requireAuth, async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: rfiRows } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!rfiRows.length) return apiError(res, 404, "RFI not found");
+    await requireProjectMember(rfiRows[0].project_id, req.userId);
+    const { rows } = await pool.query(
+      `SELECT a.*, u.name AS uploaded_by_name FROM rfi_attachments a
+       LEFT JOIN users u ON u.id = a.uploaded_by_user_id
+       WHERE a.rfi_id=$1 ORDER BY a.created_at ASC`,
+      [rfiId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/rfi/:rfiId/attachments", requireAuth, upload.single("file"), async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: rfiRows } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!rfiRows.length) return apiError(res, 404, "RFI not found");
+    await requireProjectMember(rfiRows[0].project_id, req.userId);
+    if (!req.file) return apiError(res, 400, "No file uploaded");
+    const ext = path.extname(req.file.originalname || "").toLowerCase() || "";
+    const newFilename = `rfi_${randomUUID()}${ext}`;
+    const newPath = path.join(UPLOAD_ROOT, newFilename);
+    await fs.rename(req.file.path, newPath);
+    const fileUrl = `/uploads/${newFilename}`;
+    const { rows } = await pool.query(
+      `INSERT INTO rfi_attachments (rfi_id, file_url, original_name, uploaded_by_user_id)
+       VALUES ($1,$2,$3,$4) RETURNING *`,
+      [rfiId, fileUrl, req.file.originalname || newFilename, req.userId]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/rfi-attachment/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows } = await pool.query(
+      `SELECT a.*, r.project_id FROM rfi_attachments a JOIN rfis r ON r.id=a.rfi_id WHERE a.id=$1`, [id]
+    );
+    if (!rows.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(rows[0].project_id, req.userId);
+    await pool.query(`DELETE FROM rfi_attachments WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
 
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err);

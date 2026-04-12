@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import ProjectHeader from "../../../../../components/ProjectHeader";
+import PhotoMarkup from "../../../../../components/PhotoMarkup";
 
 function getToken() {
   if (typeof document === "undefined") return "";
@@ -276,6 +277,10 @@ export default function PunchPage() {
   const [quickNote, setQuickNote] = useState("");
   const [quickPhotoFile, setQuickPhotoFile] = useState(null);
   const [quickPhotoName, setQuickPhotoName] = useState("");
+
+  // Photo markup state
+  const [markupSrc, setMarkupSrc]         = useState(null); // data URL for markup
+  const [markupTarget, setMarkupTarget]   = useState(null); // { issueId, inputEl } or "quick"
   const [quickParsingResult, setQuickParsingResult] = useState({
     title: "",
     trade: "",
@@ -640,21 +645,13 @@ export default function PunchPage() {
     }
   }
 
-  async function uploadPhoto(issueId, file, inputEl) {
-    if (!file) return;
-
+  async function uploadPhotoBlob(issueId, blob, inputEl) {
     setError("");
     setUploading((m) => ({ ...(m || {}), [issueId]: true }));
-
     try {
       const fd = new FormData();
-      fd.append("photo", file);
-
-      await apiFetch(`/punch/${issueId}/photo`, {
-        method: "POST",
-        body: fd,
-      });
-
+      fd.append("photo", blob, "photo.jpg");
+      await apiFetch(`/punch/${issueId}/photo`, { method: "POST", body: fd });
       if (inputEl) inputEl.value = "";
       await refreshIssues();
     } catch (e) {
@@ -662,6 +659,45 @@ export default function PunchPage() {
     } finally {
       setUploading((m) => ({ ...(m || {}), [issueId]: false }));
     }
+  }
+
+  function uploadPhoto(issueId, file, inputEl) {
+    if (!file) return;
+    // Show markup tool first
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setMarkupSrc(ev.target.result);
+      setMarkupTarget({ issueId, inputEl });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function onMarkupDone(blob) {
+    const target = markupTarget;
+    setMarkupSrc(null);
+    setMarkupTarget(null);
+    if (!target) return;
+    if (target === "quick") {
+      setQuickPhotoFile(blob);
+    } else {
+      uploadPhotoBlob(target.issueId, blob, target.inputEl);
+    }
+  }
+
+  function onMarkupCancel() {
+    // Upload original without markup — convert markupSrc data URL back to blob
+    const target = markupTarget;
+    const src    = markupSrc;
+    setMarkupSrc(null);
+    setMarkupTarget(null);
+    if (!target || !src) return;
+    fetch(src).then((r) => r.blob()).then((blob) => {
+      if (target === "quick") {
+        setQuickPhotoFile(blob);
+      } else {
+        uploadPhotoBlob(target.issueId, blob, target.inputEl);
+      }
+    });
   }
 
   async function openPhotoViewer(issueId, title) {
@@ -706,6 +742,16 @@ export default function PunchPage() {
 
   const showQuickAdd = iAmGC && (!isMobile || mobileEntryMode === "quick");
   const showFullForm = iAmGC && (!isMobile || mobileEntryMode === "full");
+
+  // Photo markup overlay
+  if (markupSrc) {
+    return (
+      <div className="space-y-4 p-1">
+        <div className="text-base font-bold text-slate-900">Annotate Photo</div>
+        <PhotoMarkup src={markupSrc} onDone={onMarkupDone} onCancel={onMarkupCancel} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-w-0 space-y-4 overflow-x-hidden">
