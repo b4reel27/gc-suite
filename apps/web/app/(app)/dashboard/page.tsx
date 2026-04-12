@@ -245,7 +245,12 @@ export default function DashboardPage() {
               <div className="mt-0.5 text-xs text-slate-400">{weather.condition}</div>
               <div className="text-xs text-slate-500">{weather.wind} mph wind</div>
             </div>
-          ) : null}
+          ) : (
+            <div className="text-right text-xs text-slate-500">
+              <div>Weather</div>
+              <div className="text-slate-600">Allow location</div>
+            </div>
+          )}
         </div>
         <div className="mt-3 border-t border-slate-700 pt-3">
           <div className="text-base font-bold">{projectName}</div>
