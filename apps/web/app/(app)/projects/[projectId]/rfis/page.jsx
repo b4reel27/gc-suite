@@ -124,9 +124,113 @@ function RfiForm({ initial, onSave, onCancel, saving, error }) {
   );
 }
 
+// ─── RFI Attachments ──────────────────────────────────────────────────────────
+
+function RfiAttachments({ rfiId, apiBase }) {
+  const [attachments, setAttachments] = useState([]);
+  const [uploading, setUploading]     = useState(false);
+  const fileRef                       = useRef(null);
+
+  function loadAttachments() {
+    const token = getToken();
+    fetch(`${apiBase}/rfi/${rfiId}/attachments`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => setAttachments(Array.isArray(rows) ? rows : []))
+      .catch(() => {});
+  }
+
+  useEffect(() => { if (rfiId) loadAttachments(); }, [rfiId]);
+
+  async function handleUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const token = getToken();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${apiBase}/rfi/${rfiId}/attachments`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (res.ok) { loadAttachments(); }
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function handleDelete(id) {
+    const token = getToken();
+    await fetch(`${apiBase}/rfi-attachment/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  const isImage = (url) => /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+        Attachments
+      </div>
+
+      {attachments.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-3">
+          {attachments.map((a) => (
+            <div key={a.id} className="group relative">
+              {isImage(a.file_url) ? (
+                <a href={`${apiBase}${a.file_url}`} target="_blank" rel="noreferrer">
+                  <img
+                    src={`${apiBase}${a.file_url}`}
+                    alt={a.original_name}
+                    className="h-20 w-20 rounded-xl object-cover ring-1 ring-slate-200 hover:ring-slate-400"
+                  />
+                </a>
+              ) : (
+                <a
+                  href={`${apiBase}${a.file_url}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-20 w-20 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-center text-[10px] text-slate-600 hover:bg-slate-100"
+                >
+                  <span className="text-2xl">📎</span>
+                  <span className="mt-1 truncate px-1">{a.original_name}</span>
+                </a>
+              )}
+              <button
+                onClick={() => handleDelete(a.id)}
+                className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white group-hover:flex"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <input ref={fileRef} type="file" accept="image/*,.pdf,.doc,.docx,.xlsx" className="hidden"
+        onChange={handleUpload} />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        className="rounded-xl border border-dashed border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-500 hover:border-slate-500 hover:text-slate-900 disabled:opacity-40"
+      >
+        {uploading ? "Uploading…" : "+ Attach File or Photo"}
+      </button>
+    </div>
+  );
+}
+
 // ─── RFI Detail View ──────────────────────────────────────────────────────────
 
-function RfiDetail({ rfi, me, onRespond, onClose, onBack, saving, error }) {
+function RfiDetail({ rfi, me, onRespond, onClose, onBack, saving, error, apiBase }) {
   const [response, setResponse] = useState(rfi.response || "");
   const isGC = String(me?.role || "").toUpperCase().startsWith("GC");
 
@@ -200,6 +304,9 @@ function RfiDetail({ rfi, me, onRespond, onClose, onBack, saving, error }) {
           {error}
         </div>
       )}
+
+      {/* Attachments */}
+      <RfiAttachments rfiId={rfi.id} apiBase={apiBase} />
 
       {/* Respond form (GC, open RFI) */}
       {canRespond && (
@@ -373,6 +480,7 @@ export default function RfisPage() {
           onRespond={handleRespond}
           onClose={handleClose}
           onBack={() => { setView("list"); setActiveRfi(null); setFormError(""); }}
+          apiBase={apiBase}
         />
       </div>
     );

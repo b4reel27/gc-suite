@@ -7,12 +7,13 @@ import { usePathname } from "next/navigation";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 const PROJECT_TABS = [
-  { label: "Plans",     path: "plans" },
-  { label: "Issues",    path: "punch" },
-  { label: "Schedule",  path: "schedule" },
-  { label: "RFIs",      path: "rfis" },
-  { label: "Forms",     path: "forms" },
-  { label: "Daily Log", path: "daily-log" },
+  { label: "Plans",       path: "plans" },
+  { label: "Issues",      path: "punch" },
+  { label: "Schedule",    path: "schedule" },
+  { label: "RFIs",        path: "rfis" },
+  { label: "Submittals",  path: "submittals" },
+  { label: "Forms",       path: "forms" },
+  { label: "Daily Log",   path: "daily-log" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

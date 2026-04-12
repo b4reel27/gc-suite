@@ -385,6 +385,38 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS form_submissions_project_id_idx ON form_submissions(project_id)`);
 
+  // Submittal log
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submittals (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      spec_section TEXT,
+      title TEXT NOT NULL,
+      submittal_type TEXT NOT NULL DEFAULT 'Shop Drawing'
+        CHECK (submittal_type IN ('Shop Drawing','Sample','Product Data','O&M Manual','Other')),
+      submitted_by TEXT,
+      submitted_date DATE,
+      status TEXT NOT NULL DEFAULT 'Required'
+        CHECK (status IN ('Required','Submitted','Under Review','Approved','Rejected')),
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS submittals_project_id_idx ON submittals(project_id)`);
+
+  // RFI attachments
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rfi_attachments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      rfi_id UUID NOT NULL REFERENCES rfis(id) ON DELETE CASCADE,
+      file_url TEXT NOT NULL,
+      original_name TEXT,
+      uploaded_by_user_id UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   // Drop the unique-per-day constraint so users can file a log and start a fresh
   // one on the same calendar date (the /today endpoint already filters by status).
   await pool.query(`
@@ -2259,6 +2291,142 @@ app.put("/form-submission/:id", requireAuth, async (req, res) => {
       [id, data ? JSON.stringify(data) : null, finalStatus]
     );
     res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── Submittal Log ────────────────────────────────────────────────────────────
+
+app.get("/projects/:projectId/submittals", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT s.*, u.name AS created_by_name
+       FROM submittals s
+       LEFT JOIN users u ON u.id = s.created_by_user_id
+       WHERE s.project_id = $1
+       ORDER BY s.created_at DESC LIMIT 200`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/submittals", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { spec_section, title, submittal_type, submitted_by, submitted_date, status, notes } = req.body || {};
+    if (!title) return apiError(res, 400, "title required");
+    const validTypes = ["Shop Drawing","Sample","Product Data","O&M Manual","Other"];
+    const validStatuses = ["Required","Submitted","Under Review","Approved","Rejected"];
+    const { rows } = await pool.query(
+      `INSERT INTO submittals (project_id, created_by_user_id, spec_section, title, submittal_type, submitted_by, submitted_date, status, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [projectId, req.userId, spec_section || null, title,
+       validTypes.includes(submittal_type) ? submittal_type : "Shop Drawing",
+       submitted_by || null, normalizeDateInput(submitted_date),
+       validStatuses.includes(status) ? status : "Required", notes || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/submittal/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows: existing } = await pool.query(`SELECT * FROM submittals WHERE id=$1`, [id]);
+    if (!existing.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(existing[0].project_id, req.userId);
+    const { spec_section, title, submittal_type, submitted_by, submitted_date, status, notes } = req.body || {};
+    const validTypes = ["Shop Drawing","Sample","Product Data","O&M Manual","Other"];
+    const validStatuses = ["Required","Submitted","Under Review","Approved","Rejected"];
+    const { rows } = await pool.query(
+      `UPDATE submittals SET
+         spec_section   = COALESCE($2, spec_section),
+         title          = COALESCE($3, title),
+         submittal_type = COALESCE($4, submittal_type),
+         submitted_by   = COALESCE($5, submitted_by),
+         submitted_date = COALESCE($6, submitted_date),
+         status         = COALESCE($7, status),
+         notes          = COALESCE($8, notes)
+       WHERE id=$1 RETURNING *`,
+      [id, spec_section ?? null, title ?? null,
+       (submittal_type && validTypes.includes(submittal_type)) ? submittal_type : null,
+       submitted_by ?? null, submitted_date ? normalizeDateInput(submitted_date) : null,
+       (status && validStatuses.includes(status)) ? status : null, notes ?? null]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/submittal/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows } = await pool.query(`SELECT * FROM submittals WHERE id=$1`, [id]);
+    if (!rows.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(rows[0].project_id, req.userId);
+    await pool.query(`DELETE FROM submittals WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── RFI Attachments ──────────────────────────────────────────────────────────
+
+app.get("/rfi/:rfiId/attachments", requireAuth, async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: rfiRows } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!rfiRows.length) return apiError(res, 404, "RFI not found");
+    await requireProjectMember(rfiRows[0].project_id, req.userId);
+    const { rows } = await pool.query(
+      `SELECT a.*, u.name AS uploaded_by_name FROM rfi_attachments a
+       LEFT JOIN users u ON u.id = a.uploaded_by_user_id
+       WHERE a.rfi_id=$1 ORDER BY a.created_at ASC`,
+      [rfiId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/rfi/:rfiId/attachments", requireAuth, upload.single("file"), async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: rfiRows } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!rfiRows.length) return apiError(res, 404, "RFI not found");
+    await requireProjectMember(rfiRows[0].project_id, req.userId);
+    if (!req.file) return apiError(res, 400, "No file uploaded");
+    const ext = path.extname(req.file.originalname || "").toLowerCase() || "";
+    const newFilename = `rfi_${randomUUID()}${ext}`;
+    const newPath = path.join(UPLOAD_ROOT, newFilename);
+    await fs.rename(req.file.path, newPath);
+    const fileUrl = `/uploads/${newFilename}`;
+    const { rows } = await pool.query(
+      `INSERT INTO rfi_attachments (rfi_id, file_url, original_name, uploaded_by_user_id)
+       VALUES ($1,$2,$3,$4) RETURNING *`,
+      [rfiId, fileUrl, req.file.originalname || newFilename, req.userId]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/rfi-attachment/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows } = await pool.query(
+      `SELECT a.*, r.project_id FROM rfi_attachments a JOIN rfis r ON r.id=a.rfi_id WHERE a.id=$1`, [id]
+    );
+    if (!rows.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(rows[0].project_id, req.userId);
+    await pool.query(`DELETE FROM rfi_attachments WHERE id=$1`, [id]);
+    res.json({ ok: true });
   } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
 
