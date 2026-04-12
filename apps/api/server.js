@@ -3,11 +3,22 @@ import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import { Pool } from "pg";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { randomUUID } from "crypto";
+import {
+  readPlans,
+  writePlans,
+  upsertSheetAndRevision,
+  filterSheets,
+  approveRevision,
+  supersedeRevision,
+} from "./plansStore.js";
+
+import webpush from "web-push";
 
 dotenv.config();
 
@@ -217,12 +228,46 @@ async function logActivity(projectId, userName, action, type, title) {
   }
 }
 
+/* PUSH NOTIFICATIONS */
+
+const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY  || "BH4nhUz7PnQ6BftU4S_mHBOrCxQP3Xn3pUagbKnZNlKy-eDwTDXIG_Ee91fwVhpLM-7NOONbfx1WUSYx-QD8QrQ";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "EhUTanTTnfRcAr6_SCuRTdzvBQSKse8Un1VgiD6CUrc";
+webpush.setVapidDetails("mailto:admin@gc-suite.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+
+async function sendPushToUser(userId, title, body, url = "/dashboard") {
+  try {
+    const { rows } = await pool.query(
+      `SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1`, [userId]
+    );
+    for (const sub of rows) {
+      const payload = JSON.stringify({ title, body, url });
+      await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload)
+        .catch(async (err) => {
+          if (err.statusCode === 410) {
+            await pool.query(`DELETE FROM push_subscriptions WHERE endpoint = $1`, [sub.endpoint]).catch(() => {});
+          }
+        });
+    }
+  } catch (e) {
+    console.error("sendPush error:", e);
+  }
+}
+
 /* STARTUP */
 
 (async () => {
   await fs.mkdir(UPLOAD_ROOT, { recursive: true });
 
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
+
+  // Add password_hash to users if not present
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`);
+  // Add created_at to projects if not present
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()`);
+  // Ensure project_members unique constraint exists for upsert
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS project_members_project_user_idx ON project_members(project_id, user_id)`).catch(() => {});
+  // Ensure project_members has company_id
+  await pool.query(`ALTER TABLE project_members ADD COLUMN IF NOT EXISTS company_id UUID`).catch(() => {});
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS project_activity (
@@ -235,6 +280,120 @@ async function logActivity(projectId, userName, action, type, title) {
       created_at timestamptz DEFAULT now()
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS jsa_forms (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'DRAFT'
+        CHECK (status IN ('DRAFT','SUBMITTED','APPROVED','REJECTED')),
+      work_description TEXT,
+      work_location TEXT,
+      jsa_date DATE,
+      superintendent_name TEXT,
+      emergency_contacts JSONB NOT NULL DEFAULT '{}',
+      hazards            JSONB NOT NULL DEFAULT '[]',
+      ppe                JSONB NOT NULL DEFAULT '[]',
+      work_steps         JSONB NOT NULL DEFAULT '[]',
+      crew               JSONB NOT NULL DEFAULT '[]',
+      submitted_at         TIMESTAMP,
+      approved_by_user_id  UUID REFERENCES users(id),
+      approved_at          TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS jsa_forms_project_id_idx ON jsa_forms(project_id)
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      log_date DATE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'IN_PROGRESS'
+        CHECK (status IN ('IN_PROGRESS','COMPILED')),
+      entries         JSONB NOT NULL DEFAULT '[]',
+      weather         TEXT,
+      manpower_count  INT,
+      manpower_detail TEXT,
+      narrative       TEXT,
+      tomorrow_checklist JSONB NOT NULL DEFAULT '[]',
+      compiled_at TIMESTAMP,
+      created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE(project_id, created_by_user_id, log_date)
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS daily_logs_project_id_idx ON daily_logs(project_id)
+  `);
+
+  // Plan pins on issues
+  await pool.query(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS plan_sheet_id TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS pin_x FLOAT`).catch(() => {});
+  await pool.query(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS pin_y FLOAT`).catch(() => {});
+
+  // RFIs
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rfis (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      rfi_number SERIAL,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      title TEXT NOT NULL,
+      question TEXT NOT NULL,
+      to_name TEXT,
+      due_date DATE,
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','ANSWERED','CLOSED')),
+      response TEXT,
+      responded_by_user_id UUID REFERENCES users(id),
+      responded_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS rfis_project_id_idx ON rfis(project_id)`);
+
+  // Push subscriptions
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      endpoint TEXT NOT NULL,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id, endpoint)
+    )
+  `);
+
+  // Generic form submissions (safety inspection, toolbox talk, etc.)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS form_submissions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by_user_id UUID NOT NULL REFERENCES users(id),
+      form_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','SUBMITTED')),
+      data JSONB NOT NULL DEFAULT '{}',
+      submitted_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS form_submissions_project_id_idx ON form_submissions(project_id)`);
+
+  // Drop the unique-per-day constraint so users can file a log and start a fresh
+  // one on the same calendar date (the /today endpoint already filters by status).
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE daily_logs
+        DROP CONSTRAINT IF EXISTS daily_logs_project_id_created_by_user_id_log_date_key;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END $$;
+  `).catch(() => {});
 })().catch((e) => {
   console.error("Startup error:", e);
   process.exit(1);
@@ -252,25 +411,79 @@ app.get("/health", (_req, res) => {
 
 /* AUTH */
 
-app.post("/auth/dev-login", async (req, res) => {
+// Register — create a new account
+app.post("/auth/register", async (req, res) => {
   try {
-    const { email } = req.body || {};
+    const { name, email, password } = req.body || {};
+    if (!email || !password) return apiError(res, 400, "email and password required");
+    if (password.length < 6) return apiError(res, 400, "Password must be at least 6 characters");
 
-    if (!email) return apiError(res, 400, "email required");
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM users WHERE lower(email) = lower($1)`, [email]
+    );
+    if (existing.length) return apiError(res, 409, "An account with that email already exists");
 
+    const hash = await bcrypt.hash(password, 10);
     const { rows } = await pool.query(
-      `SELECT id, email, name
-       FROM users
-       WHERE lower(email) = lower($1)`,
-      [email]
+      `INSERT INTO users (id, email, name, password_hash)
+       VALUES (gen_random_uuid(), $1, $2, $3)
+       RETURNING id, email, name`,
+      [email.toLowerCase().trim(), (name || "").trim() || null, hash]
     );
 
     const user = rows[0];
-    if (!user) return apiError(res, 404, "User not found");
+    const token = signSessionToken(user.id);
+    res.status(201).json({ token, user });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
+});
+
+// Login — email + password
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return apiError(res, 400, "email and password required");
+
+    const { rows } = await pool.query(
+      `SELECT id, email, name, password_hash FROM users WHERE lower(email) = lower($1)`,
+      [email]
+    );
+    const user = rows[0];
+    if (!user) return apiError(res, 401, "Invalid email or password");
+
+    // If no password set yet, allow login with any password and set it now (migration path)
+    if (!user.password_hash) {
+      const hash = await bcrypt.hash(password, 10);
+      await pool.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, user.id]);
+    } else {
+      const valid = await bcrypt.compare(password, user.password_hash);
+      if (!valid) return apiError(res, 401, "Invalid email or password");
+    }
 
     const token = signSessionToken(user.id);
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
+});
 
-    res.json({ token, user });
+// Dev-login kept for local dev only
+app.post("/auth/dev-login", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return apiError(res, 404, "Not found");
+  }
+  try {
+    const { email } = req.body || {};
+    if (!email) return apiError(res, 400, "email required");
+    const { rows } = await pool.query(
+      `SELECT id, email, name FROM users WHERE lower(email) = lower($1)`, [email]
+    );
+    const user = rows[0];
+    if (!user) return apiError(res, 404, "User not found");
+    res.json({ token: signSessionToken(user.id), user });
   } catch (e) {
     console.error(e);
     return apiError(res, 500, "Server error");
@@ -294,6 +507,88 @@ app.get("/projects", requireAuth, async (req, res) => {
   } catch (e) {
     console.error(e);
     return apiError(res, 500, "Server error");
+  }
+});
+
+app.post("/projects", requireAuth, async (req, res) => {
+  try {
+    const { name, location } = req.body || {};
+    if (!name?.trim()) return apiError(res, 400, "Project name is required");
+
+    const { rows } = await pool.query(
+      `INSERT INTO projects (id, name, location)
+       VALUES (gen_random_uuid(), $1, $2)
+       RETURNING id, name, location`,
+      [name.trim(), (location || "").trim() || null]
+    );
+    const project = rows[0];
+
+    // Creator becomes GC_ADMIN
+    await pool.query(
+      `INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'GC_ADMIN')`,
+      [project.id, req.userId]
+    );
+
+    res.status(201).json({ ...project, role: "GC_ADMIN" });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Server error");
+  }
+});
+
+// Add a user (by email) to a project
+app.post("/projects/:projectId/members", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { email, role } = req.body || {};
+    if (!email) return apiError(res, 400, "email is required");
+
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) return apiError(res, 403, "GC role required");
+
+    const validRole = String(role || "SUB").toUpperCase();
+    const allowedRoles = ["GC_ADMIN", "GC_SUPER", "GC_PM", "SUB_SUPER", "SUB_FOREMAN", "SUB"];
+    if (!allowedRoles.includes(validRole)) return apiError(res, 400, `Invalid role. Choose: ${allowedRoles.join(", ")}`);
+
+    const { rows: userRows } = await pool.query(
+      `SELECT id, name, email FROM users WHERE lower(email) = lower($1)`, [email]
+    );
+    if (!userRows.length) return apiError(res, 404, "No account found with that email. Ask them to register first.");
+
+    const targetUser = userRows[0];
+
+    await pool.query(
+      `INSERT INTO project_members (project_id, user_id, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+      [projectId, targetUser.id, validRole]
+    );
+
+    res.json({ ok: true, user: { id: targetUser.id, name: targetUser.name, email: targetUser.email, role: validRole } });
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// List project members
+app.get("/projects/:projectId/members", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    await requireProjectMember(projectId, req.userId);
+
+    const { rows } = await pool.query(
+      `SELECT u.id, u.name, u.email, pm.role
+       FROM project_members pm
+       JOIN users u ON u.id = pm.user_id
+       WHERE pm.project_id = $1
+       ORDER BY pm.role, u.name`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
   }
 });
 
@@ -982,9 +1277,13 @@ app.get("/projects/:projectId/daily-log/today", requireAuth, async (req, res) =>
 
     const today = new Date().toISOString().slice(0, 10);
 
+    // Find an open (non-compiled) log for today. If only compiled ones exist,
+    // create a fresh one so the user can always start a new entry after filing.
     let { rows } = await pool.query(
       `SELECT * FROM daily_logs
-       WHERE project_id = $1 AND created_by_user_id = $2 AND log_date = $3`,
+       WHERE project_id = $1 AND created_by_user_id = $2 AND log_date = $3
+         AND status != 'COMPILED'
+       ORDER BY created_at DESC LIMIT 1`,
       [projectId, req.userId, today]
     );
 
@@ -1065,6 +1364,34 @@ app.put("/daily-log/:logId", requireAuth, async (req, res) => {
         manpower_detail ?? null,
         narrative      ?? null,
       ]
+    );
+
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+// Reopen a compiled log (set status back to IN_PROGRESS)
+app.post("/daily-log/:logId/reopen", requireAuth, async (req, res) => {
+  try {
+    const { logId } = req.params;
+    if (!isUuid(logId)) return apiError(res, 400, "Invalid logId");
+
+    const log = await getDailyLog(logId);
+    if (!log) return apiError(res, 404, "Log not found");
+
+    await requireProjectMember(log.project_id, req.userId);
+
+    if (log.created_by_user_id !== req.userId)
+      return apiError(res, 403, "Can only reopen your own log");
+
+    const { rows } = await pool.query(
+      `UPDATE daily_logs
+         SET status = 'IN_PROGRESS', compiled_at = NULL
+       WHERE id = $1 RETURNING *`,
+      [logId]
     );
 
     res.json(rows[0]);
@@ -1559,7 +1886,381 @@ app.delete("/jsa/:jsaId", requireAuth, async (req, res) => {
   }
 });
 
+/* PLANS */
+
+app.get("/projects/:projectId/plans", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    await requireProjectMember(projectId, req.userId);
+
+    const store = await readPlans(projectId);
+    const sheets = filterSheets(store, req.query);
+    res.json({ sheets });
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/projects/:projectId/plans", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) {
+      return apiError(res, 403, "Only GC users can upload plans");
+    }
+
+    const store = await readPlans(projectId);
+    const updated = upsertSheetAndRevision(store, req.body);
+    await writePlans(projectId, updated);
+
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    if (e.status === 400) return apiError(res, 400, e.message);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/projects/:projectId/plans/:sheetId/approve", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) {
+      return apiError(res, 403, "Only GC users can approve plans");
+    }
+
+    const { rev } = req.body;
+    if (rev === undefined) return apiError(res, 400, "rev is required");
+
+    const store = await readPlans(projectId);
+    const updated = approveRevision(store, sheetId, rev);
+    await writePlans(projectId, updated);
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    if (e.status === 404) return apiError(res, 404, e.message);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post("/projects/:projectId/plans/:sheetId/supersede", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) {
+      return apiError(res, 403, "Only GC users can manage plans");
+    }
+
+    const { rev } = req.body;
+    if (rev === undefined) return apiError(res, 400, "rev is required");
+
+    const store = await readPlans(projectId);
+    const updated = supersedeRevision(store, sheetId, rev);
+    await writePlans(projectId, updated);
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    if (e.status === 404) return apiError(res, 404, e.message);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.post(
+  "/projects/:projectId/plans/upload",
+  requireAuth,
+  upload.single("pdf"),
+  async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+      const membership = await requireProjectMember(projectId, req.userId);
+      if (!isGcRole(membership.role)) {
+        return apiError(res, 403, "Only GC users can upload plans");
+      }
+
+      if (!req.file) {
+        return apiError(res, 400, "No PDF uploaded");
+      }
+
+      const { sheetNo, sheetId: rawSheetId, title, discipline, makeCurrent, rev, revDate } =
+        req.body;
+
+      if (!sheetNo || !title || !discipline) {
+        return apiError(res, 400, "sheetNo, title, and discipline are required");
+      }
+
+      // rename uploaded file to .pdf
+      const ext = ".pdf";
+      const newFilename = `${req.file.filename}${ext}`;
+      const oldPath = req.file.path;
+      const newPath = path.join(UPLOAD_ROOT, newFilename);
+      await fs.rename(oldPath, newPath);
+
+      const fileUrl = `/uploads/${newFilename}`;
+      const sheetId = rawSheetId?.trim() || sheetNo.trim();
+      const status = makeCurrent === "true" ? "CURRENT" : "PENDING";
+
+      const store = await readPlans(projectId);
+      const updated = upsertSheetAndRevision(store, {
+        sheetId,
+        sheetNo: sheetNo.trim(),
+        title: title.trim(),
+        discipline: discipline.trim(),
+        rev: rev?.trim() || "1",
+        revDate: revDate?.trim() || new Date().toISOString().slice(0, 10),
+        fileUrl,
+        status,
+      });
+      await writePlans(projectId, updated);
+
+      res.json({ ok: true, sheet: { sheetId, sheetNo, title, discipline, fileUrl } });
+    } catch (e) {
+      console.error(e);
+      if (e.status === 400) return apiError(res, 400, e.message);
+      return handleThrownAccessError(res, e);
+    }
+  }
+);
+
 /* ERROR HANDLER */
+
+// ─── Plan Pins ────────────────────────────────────────────────────────────────
+
+app.get("/projects/:projectId/plans/:sheetId/pins", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT i.id, i.title, i.trade, i.status, i.location, i.pin_x, i.pin_y, i.plan_sheet_id,
+              u.name AS created_by_name
+       FROM issues i
+       LEFT JOIN users u ON u.id = i.created_by_user_id
+       WHERE i.project_id = $1 AND i.plan_sheet_id = $2
+       ORDER BY i.created_at DESC`,
+      [projectId, sheetId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// Update POST /punch to accept pin fields (patched at end since original is earlier)
+// Pins are set via PUT on an existing issue:
+app.patch("/punch/:issueId/pin", requireAuth, async (req, res) => {
+  try {
+    const { issueId } = req.params;
+    if (!isUuid(issueId)) return apiError(res, 400, "Invalid issueId");
+    const issue = await getIssue(issueId);
+    if (!issue) return apiError(res, 404, "Issue not found");
+    await requireGcMembership(issue.project_id, req.userId);
+    const { plan_sheet_id, pin_x, pin_y } = req.body || {};
+    const { rows } = await pool.query(
+      `UPDATE issues SET plan_sheet_id=$2, pin_x=$3, pin_y=$4 WHERE id=$1 RETURNING *`,
+      [issueId, plan_sheet_id || null, pin_x ?? null, pin_y ?? null]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── RFIs ─────────────────────────────────────────────────────────────────────
+
+app.get("/projects/:projectId/rfis", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT r.*, u.name AS created_by_name, ru.name AS responded_by_name
+       FROM rfis r
+       LEFT JOIN users u ON u.id = r.created_by_user_id
+       LEFT JOIN users ru ON ru.id = r.responded_by_user_id
+       WHERE r.project_id = $1
+       ORDER BY r.created_at DESC`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/rfis", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { title, question, to_name, due_date } = req.body || {};
+    if (!title?.trim()) return apiError(res, 400, "title required");
+    if (!question?.trim()) return apiError(res, 400, "question required");
+    const { rows } = await pool.query(
+      `INSERT INTO rfis (project_id, created_by_user_id, title, question, to_name, due_date)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [projectId, req.userId, title.trim(), question.trim(), to_name?.trim() || null,
+       due_date || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/rfi/:rfiId", requireAuth, async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: existing } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!existing.length) return apiError(res, 404, "RFI not found");
+    const rfi = existing[0];
+    await requireProjectMember(rfi.project_id, req.userId);
+    const { title, question, to_name, due_date } = req.body || {};
+    const { rows } = await pool.query(
+      `UPDATE rfis SET title=COALESCE($2,title), question=COALESCE($3,question),
+       to_name=COALESCE($4,to_name), due_date=COALESCE($5,due_date) WHERE id=$1 RETURNING *`,
+      [rfiId, title?.trim()||null, question?.trim()||null, to_name?.trim()||null, due_date||null]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/rfi/:rfiId/respond", requireAuth, async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: existing } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!existing.length) return apiError(res, 404, "RFI not found");
+    const rfi = existing[0];
+    await requireProjectMember(rfi.project_id, req.userId);
+    const { response } = req.body || {};
+    if (!response?.trim()) return apiError(res, 400, "response required");
+    const { rows } = await pool.query(
+      `UPDATE rfis SET response=$2, status='ANSWERED', responded_by_user_id=$3,
+       responded_at=NOW() WHERE id=$1 RETURNING *`,
+      [rfiId, response.trim(), req.userId]
+    );
+    // Notify the RFI creator
+    await sendPushToUser(rfi.created_by_user_id, "RFI Answered", rfi.title);
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/rfi/:rfiId/close", requireAuth, async (req, res) => {
+  try {
+    const { rfiId } = req.params;
+    if (!isUuid(rfiId)) return apiError(res, 400, "Invalid rfiId");
+    const { rows: existing } = await pool.query(`SELECT * FROM rfis WHERE id=$1`, [rfiId]);
+    if (!existing.length) return apiError(res, 404, "RFI not found");
+    await requireGcMembership(existing[0].project_id, req.userId);
+    const { rows } = await pool.query(
+      `UPDATE rfis SET status='CLOSED' WHERE id=$1 RETURNING *`, [rfiId]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── Push Notifications ───────────────────────────────────────────────────────
+
+app.get("/push/vapid-key", (_req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+app.post("/push/subscribe", requireAuth, async (req, res) => {
+  try {
+    const { endpoint, keys } = req.body || {};
+    if (!endpoint || !keys?.p256dh || !keys?.auth) return apiError(res, 400, "Invalid subscription");
+    await pool.query(
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (user_id, endpoint) DO UPDATE SET p256dh=$3, auth=$4`,
+      [req.userId, endpoint, keys.p256dh, keys.auth]
+    );
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/push/unsubscribe", requireAuth, async (req, res) => {
+  try {
+    const { endpoint } = req.body || {};
+    await pool.query(`DELETE FROM push_subscriptions WHERE user_id=$1 AND endpoint=$2`,
+      [req.userId, endpoint]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// ─── Form Submissions (Safety Inspection, Toolbox Talk, etc.) ─────────────────
+
+app.get("/projects/:projectId/form-submissions", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { form_type } = req.query;
+    const { rows } = await pool.query(
+      `SELECT f.*, u.name AS created_by_name
+       FROM form_submissions f
+       LEFT JOIN users u ON u.id = f.created_by_user_id
+       WHERE f.project_id=$1 ${form_type ? "AND f.form_type=$2" : ""}
+       ORDER BY f.created_at DESC LIMIT 100`,
+      form_type ? [projectId, form_type] : [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/form-submissions", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { form_type, data, status } = req.body || {};
+    if (!form_type) return apiError(res, 400, "form_type required");
+    const finalStatus = status === "SUBMITTED" ? "SUBMITTED" : "DRAFT";
+    const { rows } = await pool.query(
+      `INSERT INTO form_submissions (project_id, created_by_user_id, form_type, status, data, submitted_at)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6) RETURNING *`,
+      [projectId, req.userId, form_type, finalStatus, JSON.stringify(data || {}),
+       finalStatus === "SUBMITTED" ? new Date() : null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.get("/form-submission/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows } = await pool.query(`SELECT * FROM form_submissions WHERE id=$1`, [id]);
+    if (!rows.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(rows[0].project_id, req.userId);
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/form-submission/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows: existing } = await pool.query(`SELECT * FROM form_submissions WHERE id=$1`, [id]);
+    if (!existing.length) return apiError(res, 404, "Not found");
+    await requireProjectMember(existing[0].project_id, req.userId);
+    const { data, status } = req.body || {};
+    const finalStatus = status === "SUBMITTED" ? "SUBMITTED" : (status === "DRAFT" ? "DRAFT" : existing[0].status);
+    const { rows } = await pool.query(
+      `UPDATE form_submissions SET data=COALESCE($2::jsonb,data), status=$3,
+       submitted_at=CASE WHEN $3='SUBMITTED' AND submitted_at IS NULL THEN NOW() ELSE submitted_at END
+       WHERE id=$1 RETURNING *`,
+      [id, data ? JSON.stringify(data) : null, finalStatus]
+    );
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
 
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err);
