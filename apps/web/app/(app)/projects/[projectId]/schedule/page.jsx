@@ -881,6 +881,7 @@ export default function SchedulePage() {
       ) : null}
 
       {viewMode === "list" && (
+      <>
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-3">
           <div>
@@ -1002,6 +1003,7 @@ export default function SchedulePage() {
           </div>
         ) : null}
       </div>
+      </>
       )}
     </div>
   );
