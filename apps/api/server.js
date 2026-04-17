@@ -354,8 +354,8 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
       responded_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS rfis_project_id_idx ON rfis(project_id)`);
+  `).catch((e) => console.error("rfis table:", e.message));
+  await pool.query(`CREATE INDEX IF NOT EXISTS rfis_project_id_idx ON rfis(project_id)`).catch(() => {});
 
   // Push subscriptions
   await pool.query(`
@@ -368,9 +368,9 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(user_id, endpoint)
     )
-  `);
+  `).catch((e) => console.error("push_subscriptions table:", e.message));
 
-  // Generic form submissions (safety inspection, toolbox talk, etc.)
+  // Generic form submissions
   await pool.query(`
     CREATE TABLE IF NOT EXISTS form_submissions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -382,8 +382,8 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
       submitted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS form_submissions_project_id_idx ON form_submissions(project_id)`);
+  `).catch((e) => console.error("form_submissions table:", e.message));
+  await pool.query(`CREATE INDEX IF NOT EXISTS form_submissions_project_id_idx ON form_submissions(project_id)`).catch(() => {});
 
   // Submittal log
   await pool.query(`
@@ -402,8 +402,8 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
       notes TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS submittals_project_id_idx ON submittals(project_id)`);
+  `).catch((e) => console.error("submittals table:", e.message));
+  await pool.query(`CREATE INDEX IF NOT EXISTS submittals_project_id_idx ON submittals(project_id)`).catch(() => {});
 
   // RFI attachments
   await pool.query(`
@@ -415,7 +415,7 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
       uploaded_by_user_id UUID REFERENCES users(id),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `);
+  `).catch((e) => console.error("rfi_attachments table:", e.message));
 
   // Drop the unique-per-day constraint so users can file a log and start a fresh
   // one on the same calendar date (the /today endpoint already filters by status).
