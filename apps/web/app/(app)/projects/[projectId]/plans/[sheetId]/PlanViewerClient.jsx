@@ -127,7 +127,7 @@ function PlaceForm({ x, y, projectId, sheetId, onPlaced, onCancel }) {
   const [error, setError]     = useState("");
 
   useEffect(() => {
-    apiFetch(`/punch?projectId=${projectId}`)
+    apiFetch(`/projects/${projectId}/punch`)
       .then((data) => {
         const list = Array.isArray(data) ? data : data?.issues || [];
         setIssues(list.filter((i) => !i.pin_x)); // only unpinned
