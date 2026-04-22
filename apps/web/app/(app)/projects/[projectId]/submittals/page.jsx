@@ -32,6 +32,86 @@ const TYPES      = ["Shop Drawing", "Sample", "Product Data", "O&M Manual", "Oth
 const STATUSES   = ["Required", "Submitted", "Under Review", "Approved", "Rejected"];
 const ALL_FILTER = ["All", ...STATUSES];
 
+const API_BASE = typeof process !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || "") : "";
+
+function SubmittalAttachments({ submittalId, apiFetch }) {
+  const [attachments, setAttachments] = useState([]);
+  const [uploading, setUploading]     = useState(false);
+
+  useEffect(() => {
+    apiFetch(`/submittal/${submittalId}/attachments`)
+      .then((d) => setAttachments(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, [submittalId]);
+
+  async function handleUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const token = typeof localStorage !== "undefined" ? localStorage.getItem("token") : "";
+      const res = await fetch(`${API_BASE}/submittal/${submittalId}/attachments`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (res.ok) {
+        const att = await res.json();
+        setAttachments((p) => [...p, att]);
+      }
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleDelete(id) {
+    try {
+      await apiFetch(`/submittal-attachment/${id}`, { method: "DELETE" });
+      setAttachments((p) => p.filter((a) => a.id !== id));
+    } catch {}
+  }
+
+  const isImage = (att) => (att.mime_type || "").startsWith("image/");
+
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-semibold text-slate-500">Attachments ({attachments.length})</span>
+        <label className={`cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 ${uploading ? "opacity-50" : ""}`}>
+          {uploading ? "Uploading…" : "+ Attach"}
+          <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+        </label>
+      </div>
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((att) => (
+            <div key={att.id} className="group relative">
+              {isImage(att) ? (
+                <a href={`${API_BASE}/${att.file_path}`} target="_blank" rel="noreferrer">
+                  <img src={`${API_BASE}/${att.file_path}`} alt={att.original_name}
+                    className="h-16 w-16 rounded-lg border border-slate-200 object-cover" />
+                </a>
+              ) : (
+                <a href={`${API_BASE}/${att.file_path}`} target="_blank" rel="noreferrer"
+                  className="flex h-16 w-28 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-2 text-center text-[10px] font-medium text-slate-600 hover:bg-slate-100">
+                  {att.original_name || "file"}
+                </a>
+              )}
+              <button onClick={() => handleDelete(att.id)}
+                className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white group-hover:flex">
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function empty() {
   return {
     spec_section: "",
@@ -140,6 +220,7 @@ export default function SubmittalsPage() {
   const [formError, setFormError]     = useState("");
   const [filter, setFilter]           = useState("All");
   const [query, setQuery]             = useState("");
+  const [expanded, setExpanded]       = useState(null);
 
   async function apiFetch(path, opts = {}) {
     const token = getToken();
@@ -313,7 +394,7 @@ export default function SubmittalsPage() {
             {filtered.map((s) => (
               <div key={s.id} className="px-5 py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+                  <button className="min-w-0 flex-1 text-left" onClick={() => setExpanded((p) => p === s.id ? null : s.id)}>
                     <div className="flex flex-wrap items-center gap-2">
                       {s.spec_section && (
                         <span className="font-mono text-[11px] text-slate-400">{s.spec_section}</span>
@@ -326,7 +407,7 @@ export default function SubmittalsPage() {
                       {prettyDate(s.submitted_date)}
                     </div>
                     {s.notes && <div className="mt-1 text-xs text-slate-500">{s.notes}</div>}
-                  </div>
+                  </button>
                   <div className="flex flex-shrink-0 flex-col items-end gap-2">
                     <select value={s.status}
                       onChange={(e) => handleStatusChange(s.id, e.target.value)}
@@ -341,6 +422,9 @@ export default function SubmittalsPage() {
                     </div>
                   </div>
                 </div>
+                {expanded === s.id && (
+                  <SubmittalAttachments submittalId={s.id} apiFetch={apiFetch} />
+                )}
               </div>
             ))}
           </div>

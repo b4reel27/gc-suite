@@ -252,8 +252,15 @@ const GANTT_STATUS_COLORS = {
   CANCELED: "#94a3b8",
 };
 
-function GanttView({ items }) {
-  const dated = items
+function GanttView({ items, onReschedule }) {
+  const [dragging, setDragging] = useState(null); // {id, origDs, origDe, startX, trackWidth}
+  const [localItems, setLocalItems] = useState(items);
+  const trackRefs = {};
+
+  // Keep in sync when parent items change (e.g. after save)
+  useState(() => { setLocalItems(items); });
+
+  const dated = localItems
     .map((it) => ({
       ...it,
       ds: new Date(it.start_at || it.date || it.due_date || null),
@@ -273,10 +280,15 @@ function GanttView({ items }) {
   const maxDate = new Date(Math.max(...dated.map((i) => (isNaN(i.de) ? i.ds : i.de))));
   minDate.setDate(minDate.getDate() - 1);
   maxDate.setDate(maxDate.getDate() + 2);
-  const totalDays = Math.max((maxDate - minDate) / 86400000, 1);
+  const totalMs = maxDate - minDate;
+  const totalDays = Math.max(totalMs / 86400000, 1);
 
   function pct(date) {
-    return Math.max(0, Math.min(100, ((date - minDate) / (maxDate - minDate)) * 100));
+    return Math.max(0, Math.min(100, ((date - minDate) / totalMs) * 100));
+  }
+
+  function pctToDate(p) {
+    return new Date(minDate.getTime() + (p / 100) * totalMs);
   }
 
   const monthLabels = [];
@@ -290,8 +302,69 @@ function GanttView({ items }) {
     cursor.setMonth(cursor.getMonth() + 1);
   }
 
+  function onBarMouseDown(e, it, trackEl) {
+    e.preventDefault();
+    const rect = trackEl.getBoundingClientRect();
+    setDragging({ id: it.id, origDs: it.ds, origDe: it.de, startX: e.clientX, trackWidth: rect.width, left: pct(it.ds), width: pct(isNaN(it.de) || it.de <= it.ds ? new Date(+it.ds + 86400000) : it.de) - pct(it.ds) });
+  }
+
+  function onBarTouchStart(e, it, trackEl) {
+    const touch = e.touches[0];
+    const rect = trackEl.getBoundingClientRect();
+    setDragging({ id: it.id, origDs: it.ds, origDe: it.de, startX: touch.clientX, trackWidth: rect.width, left: pct(it.ds), width: pct(isNaN(it.de) || it.de <= it.ds ? new Date(+it.ds + 86400000) : it.de) - pct(it.ds) });
+  }
+
+  function onMouseMove(e) {
+    if (!dragging) return;
+    const dx = e.clientX - dragging.startX;
+    const pctDelta = (dx / dragging.trackWidth) * 100;
+    const newLeft = Math.max(0, Math.min(100 - dragging.width, dragging.left + pctDelta));
+    setLocalItems((prev) =>
+      prev.map((it) => {
+        if (it.id !== dragging.id) return it;
+        const newDs = pctToDate(newLeft);
+        const duration = dragging.origDe - dragging.origDs;
+        const newDe = new Date(newDs.getTime() + (duration > 0 ? duration : 86400000));
+        return { ...it, start_at: newDs.toISOString(), end_at: newDe.toISOString(), date: newDs.toISOString() };
+      })
+    );
+  }
+
+  function onMouseUp(e) {
+    if (!dragging) return;
+    const dx = e.clientX - dragging.startX;
+    if (Math.abs(dx) > 4) {
+      const pctDelta = (dx / dragging.trackWidth) * 100;
+      const newLeft = Math.max(0, Math.min(100 - dragging.width, dragging.left + pctDelta));
+      const newDs = pctToDate(newLeft);
+      const duration = dragging.origDe - dragging.origDs;
+      const newDe = new Date(newDs.getTime() + (duration > 0 ? duration : 86400000));
+      onReschedule(dragging.id, newDs, newDe);
+    }
+    setDragging(null);
+  }
+
+  function onTouchMove(e) {
+    if (!dragging) return;
+    const touch = e.touches[0];
+    onMouseMove({ clientX: touch.clientX });
+  }
+
+  function onTouchEnd(e) {
+    if (!dragging) return;
+    const touch = e.changedTouches[0];
+    onMouseUp({ clientX: touch.clientX });
+  }
+
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div
+      className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm select-none"
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       <div style={{ minWidth: Math.max(600, totalDays * 14) + "px" }} className="p-4">
         {/* Month axis */}
         <div className="relative mb-3 h-5">
@@ -317,12 +390,18 @@ function GanttView({ items }) {
                 <div className="w-28 flex-shrink-0 truncate text-xs font-medium text-slate-700" title={it.title}>
                   {it.title}
                 </div>
-                <div className="relative flex-1" style={{ height: 24 }}>
+                <div
+                  className="relative flex-1"
+                  style={{ height: 24 }}
+                  ref={(el) => { if (el) trackRefs[it.id] = el; }}
+                >
                   <div className="absolute inset-y-0 w-full rounded-full bg-slate-100" />
                   <div
-                    className="absolute inset-y-1 rounded-full"
+                    className={`absolute inset-y-1 rounded-full transition-none ${dragging?.id === it.id ? "cursor-grabbing" : "cursor-grab"}`}
                     style={{ left: `${left}%`, width: `${width}%`, backgroundColor: color }}
-                    title={`${fmtDate(it.ds)} – ${fmtDate(isNaN(it.de) ? it.ds : it.de)}`}
+                    title={`${fmtDate(it.ds)} – ${fmtDate(isNaN(it.de) ? it.ds : it.de)}  ·  drag to reschedule`}
+                    onMouseDown={(e) => onBarMouseDown(e, it, e.currentTarget.parentElement)}
+                    onTouchStart={(e) => onBarTouchStart(e, it, e.currentTarget.parentElement)}
                   />
                 </div>
               </div>
@@ -337,6 +416,7 @@ function GanttView({ items }) {
               {s}
             </span>
           ))}
+          <span className="ml-auto text-[10px] text-slate-400 italic">drag bars to reschedule</span>
         </div>
       </div>
     </div>
@@ -642,6 +722,23 @@ export default function SchedulePage() {
     }
   }
 
+  async function handleReschedule(id, newStart, newEnd) {
+    try {
+      const updated = await apiFetch(`/schedule-item/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_at: newStart.toISOString(),
+          end_at: newEnd.toISOString(),
+          date: newStart.toISOString(),
+        }),
+      });
+      setItems((prev) => (prev || []).map((x) => x.id === id ? { ...x, ...updated } : x));
+    } catch (e) {
+      setError(e?.message || "Failed to reschedule");
+    }
+  }
+
   function canDone(status) {
     const s = statusUpper(status);
     return s === "OPEN";
@@ -877,7 +974,7 @@ export default function SchedulePage() {
       </div>
 
       {viewMode === "gantt" ? (
-        <GanttView items={filtered} />
+        <GanttView items={filtered} onReschedule={handleReschedule} />
       ) : null}
 
       {viewMode === "list" && (

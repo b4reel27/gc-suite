@@ -4,6 +4,180 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate } from "../_data";
 
+/* ── Plan Markup Canvas ───────────────────────────────────────────────────── */
+
+const MARKUP_COLORS = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#000000"];
+
+function PlanMarkupCanvas({ containerRef, existingUrl, onSave, onCancel }) {
+  const canvasRef   = useRef(null);
+  const [tool, setTool]   = useState("circle");
+  const [color, setColor] = useState("#ef4444");
+  const [shapes, setShapes] = useState([]);
+  const [drawing, setDrawing] = useState(null);
+  const [textPos, setTextPos] = useState(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    canvas.width  = rect.width;
+    canvas.height = rect.height;
+    if (existingUrl) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      };
+      img.src = existingUrl;
+    }
+  }, [existingUrl]);
+
+  function redraw(shapeList) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const s of shapeList) drawShape(ctx, s);
+  }
+
+  function drawShape(ctx, s) {
+    ctx.strokeStyle = s.color;
+    ctx.fillStyle   = s.color;
+    ctx.lineWidth   = 2.5;
+    if (s.type === "circle") {
+      ctx.beginPath();
+      const rx = Math.abs(s.x2 - s.x1) / 2, ry = Math.abs(s.y2 - s.y1) / 2;
+      ctx.ellipse(s.x1 + (s.x2 - s.x1) / 2, s.y1 + (s.y2 - s.y1) / 2, Math.max(rx, 4), Math.max(ry, 4), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (s.type === "arrow") {
+      ctx.beginPath();
+      ctx.moveTo(s.x1, s.y1);
+      ctx.lineTo(s.x2, s.y2);
+      ctx.stroke();
+      const angle = Math.atan2(s.y2 - s.y1, s.x2 - s.x1);
+      const head  = 14;
+      ctx.beginPath();
+      ctx.moveTo(s.x2, s.y2);
+      ctx.lineTo(s.x2 - head * Math.cos(angle - 0.4), s.y2 - head * Math.sin(angle - 0.4));
+      ctx.lineTo(s.x2 - head * Math.cos(angle + 0.4), s.y2 - head * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fill();
+    } else if (s.type === "text") {
+      ctx.font = "bold 15px system-ui, Arial";
+      ctx.fillText(s.text, s.x1, s.y1);
+    }
+  }
+
+  function getPos(e) {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const src  = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+  }
+
+  function onDown(e) {
+    if (tool === "text") { setTextPos(getPos(e)); return; }
+    const p = getPos(e);
+    setDrawing({ type: tool, color, x1: p.x, y1: p.y, x2: p.x, y2: p.y });
+  }
+
+  function onMove(e) {
+    if (!drawing) return;
+    const p = getPos(e);
+    const current = { ...drawing, x2: p.x, y2: p.y };
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    shapes.forEach((s) => drawShape(ctx, s));
+    drawShape(ctx, current);
+  }
+
+  function onUp(e) {
+    if (!drawing) return;
+    const p = getPos(e);
+    const finished = { ...drawing, x2: p.x, y2: p.y };
+    const next = [...shapes, finished];
+    setShapes(next);
+    setDrawing(null);
+    redraw(next);
+  }
+
+  function undo() {
+    const next = shapes.slice(0, -1);
+    setShapes(next);
+    redraw(next);
+  }
+
+  function handleTextSubmit(text) {
+    if (!text || !textPos) { setTextPos(null); return; }
+    const s = { type: "text", color, text, x1: textPos.x, y1: textPos.y };
+    const next = [...shapes, s];
+    setShapes(next);
+    setTextPos(null);
+    redraw(next);
+  }
+
+  function handleSave() {
+    canvasRef.current.toBlob((blob) => blob && onSave(blob), "image/png");
+  }
+
+  const toolBtn = (t, label) => (
+    <button type="button" onClick={() => setTool(t)}
+      className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${tool === t ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="absolute inset-0 z-30 flex flex-col bg-black/5">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2 bg-white/95 px-3 py-2 shadow-md">
+        {toolBtn("circle", "◯ Circle")}
+        {toolBtn("arrow",  "→ Arrow")}
+        {toolBtn("text",   "T Text")}
+        <div className="flex gap-1.5 ml-1">
+          {MARKUP_COLORS.map((c) => (
+            <button key={c} type="button" onClick={() => setColor(c)}
+              style={{ backgroundColor: c }}
+              className={`h-5 w-5 rounded-full border-2 ${color === c ? "border-slate-900 scale-125" : "border-transparent"}`} />
+          ))}
+        </div>
+        <button type="button" onClick={undo} disabled={shapes.length === 0}
+          className="ml-auto rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40 hover:bg-slate-50">
+          Undo
+        </button>
+        <button type="button" onClick={handleSave}
+          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">
+          Save Markup
+        </button>
+        <button type="button" onClick={onCancel}
+          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+          Cancel
+        </button>
+      </div>
+      {/* Canvas */}
+      <canvas
+        ref={canvasRef}
+        className="flex-1 touch-none cursor-crosshair"
+        onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp}
+        onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
+      />
+      {/* Text input dialog */}
+      {textPos && (
+        <div className="absolute left-1/2 top-1/2 z-40 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+          <p className="mb-2 text-sm font-semibold text-slate-700">Enter annotation text</p>
+          <input autoFocus className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+            onKeyDown={(e) => { if (e.key === "Enter") handleTextSubmit(e.target.value); if (e.key === "Escape") setTextPos(null); }} />
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={() => setTextPos(null)} className="text-xs text-slate-500 hover:text-slate-800">Cancel</button>
+            <button type="button" onClick={(e) => handleTextSubmit(e.target.closest("div").previousSibling.value)}
+              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white">Add</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const API_URL =
   typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
     ? process.env.NEXT_PUBLIC_API_URL
@@ -212,6 +386,9 @@ export default function PlanViewerClient({ projectId, sheetId, plan }) {
   const [pins, setPins]                 = useState([]);
   const [pendingPin, setPendingPin]     = useState(null); // {x, y} in percent
   const [detailPin, setDetailPin]       = useState(null);
+  const [markupMode, setMarkupMode]     = useState(false);
+  const [annotation, setAnnotation]     = useState(null); // URL string
+  const [savingMarkup, setSavingMarkup] = useState(false);
   const overlayRef                      = useRef(null);
 
   const selected = useMemo(
@@ -227,6 +404,46 @@ export default function PlanViewerClient({ projectId, sheetId, plan }) {
   }, [projectId, sheetId]);
 
   useEffect(() => { loadPins(); }, [loadPins]);
+
+  useEffect(() => {
+    if (!sheetId) return;
+    apiFetch(`/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/annotation?rev=${encodeURIComponent(selectedRev)}`)
+      .then((d) => {
+        if (d?.file_path) setAnnotation(`${API_URL}/${d.file_path}`);
+        else setAnnotation(null);
+      })
+      .catch(() => setAnnotation(null));
+  }, [projectId, sheetId, selectedRev]);
+
+  async function handleMarkupSave(blob) {
+    setSavingMarkup(true);
+    try {
+      const token = getToken();
+      const fd = new FormData();
+      fd.append("image", blob, "annotation.png");
+      fd.append("rev", selectedRev);
+      const res = await fetch(`${API_URL}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/annotation`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setAnnotation(`${API_URL}/${d.file_path}`);
+      }
+    } finally {
+      setSavingMarkup(false);
+      setMarkupMode(false);
+    }
+  }
+
+  async function handleMarkupClear() {
+    if (!confirm("Clear annotation for this sheet?")) return;
+    try {
+      await apiFetch(`/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/annotation?rev=${encodeURIComponent(selectedRev)}`, { method: "DELETE" });
+      setAnnotation(null);
+    } catch {}
+  }
 
   function handleOverlayClick(e) {
     if (!pinMode) return;
@@ -307,6 +524,25 @@ export default function PlanViewerClient({ projectId, sheetId, plan }) {
           >
             {pinMode ? "✕ Cancel Pin" : "📌 Pin Issue"}
           </button>
+
+          <button
+            type="button"
+            onClick={() => { setMarkupMode((v) => !v); setPinMode(false); }}
+            className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+              markupMode
+                ? "bg-blue-600 text-white"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {markupMode ? "✕ Cancel Markup" : "✏️ Markup"}
+          </button>
+
+          {annotation && !markupMode && (
+            <button type="button" onClick={handleMarkupClear}
+              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
+              Clear Markup
+            </button>
+          )}
 
           {selected?.fileUrl ? (
             <a
@@ -401,8 +637,27 @@ export default function PlanViewerClient({ projectId, sheetId, plan }) {
               title={`Plan ${plan.sheetNo} rev ${selected.rev}`}
               src={selected.fileUrl}
               className="h-[75vh] w-full"
-              style={{ pointerEvents: pinMode ? "none" : "auto" }}
+              style={{ pointerEvents: (pinMode || markupMode) ? "none" : "auto" }}
             />
+
+            {/* Annotation overlay (view mode) */}
+            {annotation && !markupMode && (
+              <img
+                src={annotation}
+                alt="markup"
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", pointerEvents: "none", zIndex: 10 }}
+              />
+            )}
+
+            {/* Markup canvas (edit mode) */}
+            {markupMode && (
+              <PlanMarkupCanvas
+                containerRef={overlayRef}
+                existingUrl={annotation}
+                onSave={handleMarkupSave}
+                onCancel={() => setMarkupMode(false)}
+              />
+            )}
 
             {/* Render existing pins */}
             {pins.map((p) => (

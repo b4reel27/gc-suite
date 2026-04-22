@@ -19,6 +19,7 @@ import {
 } from "./plansStore.js";
 
 import webpush from "web-push";
+import nodemailer from "nodemailer";
 
 dotenv.config();
 
@@ -234,6 +235,41 @@ const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY  || "BH4nhUz7PnQ6BftU4S_m
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "EhUTanTTnfRcAr6_SCuRTdzvBQSKse8Un1VgiD6CUrc";
 webpush.setVapidDetails("mailto:admin@gc-suite.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
+/* EMAIL */
+
+let mailer = null;
+if (process.env.SMTP_HOST) {
+  mailer = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === "true",
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+}
+
+async function sendEmail(to, subject, text) {
+  if (!mailer || !to) return;
+  try {
+    await mailer.sendMail({ from: process.env.SMTP_FROM || "noreply@gc-suite.app", to, subject, text });
+  } catch (e) {
+    console.error("Email send error:", e.message);
+  }
+}
+
+async function notifyCompanyMembers(projectId, companyId, subject, text) {
+  if (!mailer || !companyId) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.email FROM project_members pm JOIN users u ON u.id = pm.user_id
+       WHERE pm.project_id = $1 AND pm.company_id = $2`,
+      [projectId, companyId]
+    );
+    for (const row of rows) await sendEmail(row.email, subject, text);
+  } catch (e) {
+    console.error("notifyCompanyMembers:", e.message);
+  }
+}
+
 async function sendPushToUser(userId, title, body, url = "/dashboard") {
   try {
     const { rows } = await pool.query(
@@ -416,6 +452,33 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `).catch((e) => console.error("rfi_attachments table:", e.message));
+
+  // Submittal attachments
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submittal_attachments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      submittal_id UUID NOT NULL REFERENCES submittals(id) ON DELETE CASCADE,
+      file_path TEXT NOT NULL,
+      original_name TEXT,
+      mime_type TEXT,
+      uploaded_by_user_id UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `).catch((e) => console.error("submittal_attachments table:", e.message));
+
+  // Plan annotations (markup drawn on top of a plan sheet)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS plan_annotations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      sheet_id TEXT NOT NULL,
+      rev TEXT NOT NULL DEFAULT '',
+      file_path TEXT NOT NULL,
+      created_by_user_id UUID REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `).catch((e) => console.error("plan_annotations table:", e.message));
+  await pool.query(`CREATE INDEX IF NOT EXISTS plan_annotations_sheet_idx ON plan_annotations(project_id, sheet_id)`).catch(() => {});
 
   // Drop the unique-per-day constraint so users can file a log and start a fresh
   // one on the same calendar date (the /today endpoint already filters by status).
@@ -796,6 +859,15 @@ app.post("/projects/:projectId/punch", requireAuth, async (req, res) => {
     const issue = rows[0];
 
     await logActivity(projectId, userName, "created", "Issue", issue.title);
+
+    if (issue.assigned_company_id) {
+      notifyCompanyMembers(
+        projectId,
+        issue.assigned_company_id,
+        `New Issue Assigned: ${issue.title}`,
+        `You have a new issue assigned to your company.\n\nTitle: ${issue.title}\nLocation: ${issue.location || "—"}\nTrade: ${issue.trade || "—"}\n\nLog in to GC Suite to view details.`
+      );
+    }
 
     res.status(201).json(issue);
   } catch (e) {
@@ -1281,6 +1353,44 @@ app.delete("/schedule-item/:id", requireAuth, async (req, res) => {
     await pool.query(`DELETE FROM schedule_items WHERE id = $1`, [id]);
 
     res.json({ ok: true, deleted: id });
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
+app.put("/schedule-item/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+
+    const item = await getScheduleItem(id);
+    if (!item) return apiError(res, 404, "Schedule item not found");
+
+    await requireGcMembership(item.project_id, req.userId);
+
+    const { title, start_at, end_at, due_date, notes, status } = req.body || {};
+    const { rows } = await pool.query(
+      `UPDATE schedule_items
+       SET title    = COALESCE($1, title),
+           start_at = COALESCE($2::timestamptz, start_at),
+           end_at   = COALESCE($3::timestamptz, end_at),
+           due_date = COALESCE($4::date, due_date),
+           notes    = COALESCE($5, notes),
+           status   = COALESCE($6, status)
+       WHERE id = $7
+       RETURNING *`,
+      [
+        title || null,
+        normalizeDateInput(start_at) || null,
+        normalizeDateInput(end_at) || null,
+        normalizeDateInput(due_date) || null,
+        notes || null,
+        status || null,
+        id,
+      ]
+    );
+    res.json(rows[0]);
   } catch (e) {
     console.error(e);
     return handleThrownAccessError(res, e);
@@ -2426,6 +2536,116 @@ app.delete("/rfi-attachment/:id", requireAuth, async (req, res) => {
     if (!rows.length) return apiError(res, 404, "Not found");
     await requireProjectMember(rows[0].project_id, req.userId);
     await pool.query(`DELETE FROM rfi_attachments WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SUBMITTAL ATTACHMENTS
+───────────────────────────────────────────────────────────────────────────── */
+
+app.get("/submittal/:id/attachments", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows: [sub] } = await pool.query(`SELECT * FROM submittals WHERE id = $1`, [id]);
+    if (!sub) return apiError(res, 404, "Submittal not found");
+    await requireProjectMember(sub.project_id, req.userId);
+    const { rows } = await pool.query(
+      `SELECT sa.*, u.name AS uploader_name FROM submittal_attachments sa
+       LEFT JOIN users u ON u.id = sa.uploaded_by_user_id
+       WHERE sa.submittal_id = $1 ORDER BY sa.created_at ASC`,
+      [id]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/submittal/:id/attachments", requireAuth, upload.single("file"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    if (!req.file) return apiError(res, 400, "file required");
+    const { rows: [sub] } = await pool.query(`SELECT * FROM submittals WHERE id = $1`, [id]);
+    if (!sub) return apiError(res, 404, "Submittal not found");
+    await requireProjectMember(sub.project_id, req.userId);
+    const { rows } = await pool.query(
+      `INSERT INTO submittal_attachments (submittal_id, file_path, original_name, mime_type, uploaded_by_user_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [id, req.file.path, req.file.originalname, req.file.mimetype, req.userId]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/submittal-attachment/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows: [att] } = await pool.query(`SELECT sa.*, s.project_id FROM submittal_attachments sa JOIN submittals s ON s.id = sa.submittal_id WHERE sa.id = $1`, [id]);
+    if (!att) return apiError(res, 404, "Attachment not found");
+    await requireProjectMember(att.project_id, req.userId);
+    await pool.query(`DELETE FROM submittal_attachments WHERE id = $1`, [id]);
+    try { await fs.unlink(att.file_path); } catch {}
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PLAN ANNOTATIONS
+───────────────────────────────────────────────────────────────────────────── */
+
+app.get("/projects/:projectId/plans/:sheetId/annotation", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    const { rev = "" } = req.query;
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT * FROM plan_annotations WHERE project_id = $1 AND sheet_id = $2 AND rev = $3
+       ORDER BY created_at DESC LIMIT 1`,
+      [projectId, decodeURIComponent(sheetId), rev]
+    );
+    res.json(rows[0] || null);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/plans/:sheetId/annotation", requireAuth, upload.single("image"), async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    const { rev = "" } = req.body;
+    if (!req.file) return apiError(res, 400, "image required");
+    await requireProjectMember(projectId, req.userId);
+    // Replace previous annotation for same sheet+rev
+    const { rows: old } = await pool.query(
+      `SELECT id, file_path FROM plan_annotations WHERE project_id = $1 AND sheet_id = $2 AND rev = $3`,
+      [projectId, decodeURIComponent(sheetId), rev]
+    );
+    for (const o of old) {
+      await pool.query(`DELETE FROM plan_annotations WHERE id = $1`, [o.id]);
+      try { await fs.unlink(o.file_path); } catch {}
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO plan_annotations (project_id, sheet_id, rev, file_path, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [projectId, decodeURIComponent(sheetId), rev, req.file.path, req.userId]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/projects/:projectId/plans/:sheetId/annotation", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    const { rev = "" } = req.query;
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT id, file_path FROM plan_annotations WHERE project_id = $1 AND sheet_id = $2 AND rev = $3`,
+      [projectId, decodeURIComponent(sheetId), rev]
+    );
+    for (const r of rows) {
+      await pool.query(`DELETE FROM plan_annotations WHERE id = $1`, [r.id]);
+      try { await fs.unlink(r.file_path); } catch {}
+    }
     res.json({ ok: true });
   } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
