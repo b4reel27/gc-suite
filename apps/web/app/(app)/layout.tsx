@@ -59,9 +59,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {/* Brand */}
             <div>
               <div className="text-xl font-extrabold tracking-tight text-slate-900">GC Suite</div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
-                Command Center
-              </div>
             </div>
 
             {/* Top nav — side by side */}

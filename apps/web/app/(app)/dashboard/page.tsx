@@ -265,9 +265,9 @@ export default function DashboardPage() {
             className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-white transition hover:border-slate-500 hover:bg-slate-800">
             Daily Log
           </Link>
-          <Link href={`/projects/${projectId}/forms`}
+          <Link href={`/projects/${projectId}/rfis`}
             className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-white transition hover:border-slate-500 hover:bg-slate-800">
-            + JSA
+            + RFI
           </Link>
         </div>
       </div>
@@ -370,30 +370,16 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ── Stats Row ── */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Open", value: openIssues.length, color: "text-red-600" },
-              { label: "In Progress", value: inProgressIssues.length, color: "text-amber-600" },
-              { label: "Verified", value: verifiedIssues.length, color: "text-emerald-600" },
-            ].map(({ label, value, color }) => (
-              <Link key={label} href={`/projects/${projectId}/${ISSUE_ROUTE}`}
-                className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm transition hover:shadow-md">
-                <div className={`text-2xl font-extrabold ${color}`}>{value}</div>
-                <div className="mt-0.5 text-xs font-semibold text-slate-500">{label}</div>
-              </Link>
-            ))}
-          </div>
-
           {/* ── Open Issues ── */}
           {recentIssues.length > 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-base font-bold text-slate-900">Open Issues</h2>
-                <Link href={`/projects/${projectId}/${ISSUE_ROUTE}`}
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-900">
-                  View all →
-                </Link>
+                <div className="flex items-center gap-2">
+                  {openIssues.length > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600 ring-1 ring-red-200">{openIssues.length} open</span>}
+                  {inProgressIssues.length > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-600 ring-1 ring-amber-200">{inProgressIssues.length} active</span>}
+                  <Link href={`/projects/${projectId}/${ISSUE_ROUTE}`} className="text-xs font-semibold text-slate-500 hover:text-slate-900">View all →</Link>
+                </div>
               </div>
               <div className="space-y-2">
                 {recentIssues.map((issue, i) => (

@@ -93,6 +93,13 @@ function getApiBase() {
   return "http://localhost:3005";
 }
 
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt)) return "";
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function cleanSpaces(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
@@ -760,27 +767,9 @@ export default function PunchPage() {
         location={projectLocation || ""}
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">
-            Field Issues
-          </h1>
-          {me?.role ? (
-            <p className="mt-1 text-sm text-slate-500">
-              Role: <span className="font-semibold text-slate-900">{me.role}</span>
-            </p>
-          ) : (
-            <p className="mt-1 text-xs text-slate-400">
-              API: <span className="font-mono">{apiBase}</span>
-            </p>
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={refreshIssues}
-          className={`${secondaryButtonClass} w-full sm:w-auto`}
-        >
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Field Issues</h1>
+        <button type="button" onClick={refreshIssues} className={`${secondaryButtonClass} shrink-0`}>
           Refresh
         </button>
       </div>
@@ -1023,10 +1012,6 @@ export default function PunchPage() {
       ) : null}
 
       <Card>
-        <div className="mb-4">
-          <h2 className="text-lg font-bold text-slate-900">Filter Issues</h2>
-        </div>
-
         {/* My Company toggle — shown for subs */}
         {me && !isGcRole(me.role) ? (
           <div className="mb-4">
@@ -1099,56 +1084,28 @@ export default function PunchPage() {
 
           return (
             <Card key={it.id}>
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-bold text-slate-900">{it.title}</h3>
-                      <span
-                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(
-                          s
-                        )}`}
-                      >
+                      <h3 className="font-bold text-slate-900">{it.title}</h3>
+                      <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusBadgeClass(s)}`}>
                         {prettyStatus(s)}
                       </span>
                     </div>
-
-                    <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-3">
-                      <span>
-                        Trade: <span className="font-semibold text-slate-900">{it.trade || "—"}</span>
-                      </span>
-                      <span>
-                        Location:{" "}
-                        <span className="font-semibold text-slate-900">{it.location || "—"}</span>
-                      </span>
-                      <span>
-                        Created By:{" "}
-                        <span className="font-semibold text-slate-900">
-                          {it.created_by_name || "—"}
-                        </span>
-                      </span>
-                      <span>
-                        Photos: <span className="font-semibold text-slate-900">{photoCount}</span>
-                      </span>
-                      {assignedCompanyName ? (
-                        <span>
-                          Assigned:{" "}
-                          <span className="font-semibold text-slate-900">{assignedCompanyName}</span>
-                        </span>
-                      ) : null}
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                      {it.trade && <span className="font-medium text-slate-700">{it.trade}</span>}
+                      {it.location && <><span className="text-slate-300">·</span><span>{it.location}</span></>}
+                      {assignedCompanyName && <><span className="text-slate-300">·</span><span className="font-medium text-slate-700">{assignedCompanyName}</span></>}
+                      {it.due_date && <><span className="text-slate-300">·</span><span className={new Date(it.due_date) < new Date() && s !== "VERIFIED" && s !== "CLOSED" ? "font-semibold text-red-600" : ""}>Due {fmtDate(it.due_date)}</span></>}
+                      {photoCount > 0 && <><span className="text-slate-300">·</span><span>📷 {photoCount}</span></>}
                     </div>
                   </div>
-
                   {iAmGC ? (
-                    <div className="flex shrink-0">
-                      <button
-                        onClick={() => deleteIssue(it.id)}
-                        className="inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100"
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                    <button onClick={() => deleteIssue(it.id)} type="button"
+                      className="shrink-0 text-xs text-red-400 hover:text-red-700">
+                      Delete
+                    </button>
                   ) : null}
                 </div>
 
