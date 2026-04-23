@@ -373,12 +373,13 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
   await pool.query(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS pin_x FLOAT`).catch(() => {});
   await pool.query(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS pin_y FLOAT`).catch(() => {});
 
-  // RFIs
+  // RFIs — separate sequence so orphaned sequences don't block table creation
+  await pool.query(`CREATE SEQUENCE IF NOT EXISTS rfis_rfi_number_seq`).catch(() => {});
   await pool.query(`
     CREATE TABLE IF NOT EXISTS rfis (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      rfi_number SERIAL,
+      rfi_number INTEGER NOT NULL DEFAULT nextval('rfis_rfi_number_seq'),
       created_by_user_id UUID NOT NULL REFERENCES users(id),
       title TEXT NOT NULL,
       question TEXT NOT NULL,
@@ -391,6 +392,7 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `).catch((e) => console.error("rfis table:", e.message));
+  await pool.query(`ALTER SEQUENCE IF EXISTS rfis_rfi_number_seq OWNED BY rfis.rfi_number`).catch(() => {});
   await pool.query(`CREATE INDEX IF NOT EXISTS rfis_project_id_idx ON rfis(project_id)`).catch(() => {});
 
   // Push subscriptions
@@ -2224,16 +2226,18 @@ let _tablesEnsured = false;
 async function ensureNewTables() {
   if (_tablesEnsured) return;
   _tablesEnsured = true;
+  await pool.query(`CREATE SEQUENCE IF NOT EXISTS rfis_rfi_number_seq`).catch(() => {});
   await pool.query(`CREATE TABLE IF NOT EXISTS rfis (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    rfi_number SERIAL,
+    rfi_number INTEGER NOT NULL DEFAULT nextval('rfis_rfi_number_seq'),
     created_by_user_id UUID NOT NULL REFERENCES users(id),
     title TEXT NOT NULL, question TEXT NOT NULL, to_name TEXT, due_date DATE,
     status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','ANSWERED','CLOSED')),
     response TEXT, responded_by_user_id UUID REFERENCES users(id),
     responded_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`).catch(() => {});
+  await pool.query(`ALTER SEQUENCE IF EXISTS rfis_rfi_number_seq OWNED BY rfis.rfi_number`).catch(() => {});
   await pool.query(`CREATE INDEX IF NOT EXISTS rfis_project_id_idx ON rfis(project_id)`).catch(() => {});
   await pool.query(`CREATE TABLE IF NOT EXISTS rfi_attachments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
