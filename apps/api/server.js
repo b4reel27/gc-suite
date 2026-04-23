@@ -2218,18 +2218,6 @@ app.patch("/punch/:issueId/pin", requireAuth, async (req, res) => {
 
 // ─── RFIs ─────────────────────────────────────────────────────────────────────
 
-app.get("/debug/rfi-table", async (_req, res) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema='public' AND table_name='rfis' ORDER BY ordinal_position`
-    );
-    const seqRows = await pool.query(
-      `SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema='public' AND sequence_name='rfis_rfi_number_seq'`
-    );
-    res.json({ columns: rows, sequenceExists: seqRows.rows.length > 0 });
-  } catch (e) { res.json({ error: e.message }); }
-});
-
 // Guarantee tables exist on first use — handles cases where startup migration
 // ran on an old deploy before these tables were added.
 let _tablesEnsured = false;
@@ -2342,7 +2330,7 @@ app.post("/projects/:projectId/rfis", requireAuth, async (req, res) => {
        due_date || null]
     );
     res.status(201).json(rows[0]);
-  } catch (e) { console.error(e); return apiError(res, 500, e?.message || "Server error"); }
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
 
 app.put("/rfi/:rfiId", requireAuth, async (req, res) => {
