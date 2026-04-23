@@ -36,7 +36,8 @@ function statusUpper(s) {
 }
 
 function prettyStatus(status) {
-  return statusUpper(status).replaceAll("_", " ");
+  return statusUpper(status).replaceAll("_", " ")
+    .replace(/\w+/g, (w) => w[0] + w.slice(1).toLowerCase());
 }
 
 function statusBadgeClass(status) {
@@ -1038,12 +1039,12 @@ export default function PunchPage() {
               onChange={(e) => setFilter(e.target.value)}
               className={fieldClass}
             >
-              <option value="ALL">ALL</option>
-              <option value="OPEN">OPEN</option>
-              <option value="IN_PROGRESS">IN PROGRESS</option>
-              <option value="DONE">DONE</option>
-              <option value="VERIFIED">VERIFIED</option>
-              <option value="CLOSED">CLOSED</option>
+              <option value="ALL">All</option>
+              <option value="OPEN">Open</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="DONE">Done</option>
+              <option value="VERIFIED">Verified</option>
+              <option value="CLOSED">Closed</option>
             </select>
           </div>
 

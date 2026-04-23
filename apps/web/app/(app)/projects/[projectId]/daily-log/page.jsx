@@ -820,12 +820,16 @@ function exportPDF(log, projectName, projectLoc) {
 </body>
 </html>`;
 
-  const win = window.open("", "_blank");
-  if (!win) { alert("Please allow popups to export PDF."); return; }
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => { win.print(); }, 400);
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────

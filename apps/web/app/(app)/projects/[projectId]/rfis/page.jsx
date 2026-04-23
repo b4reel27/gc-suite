@@ -257,7 +257,7 @@ function RfiDetail({ rfi, me, onRespond, onClose, onBack, saving, error, apiBase
               <span
                 className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusBadge(rfi.status)}`}
               >
-                {rfi.status}
+                {{OPEN:"Open",ANSWERED:"Answered",CLOSED:"Closed"}[rfi.status]??rfi.status}
               </span>
             </div>
             <h2 className="mt-1 text-lg font-bold text-slate-900">{rfi.title}</h2>
@@ -579,7 +579,7 @@ export default function RfisPage() {
                       <span
                         className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusBadge(rfi.status)}`}
                       >
-                        {rfi.status}
+                        {{OPEN:"Open",ANSWERED:"Answered",CLOSED:"Closed"}[rfi.status]??rfi.status}
                       </span>
                     </div>
                     <div className="mt-0.5 truncate text-sm font-semibold text-slate-900">

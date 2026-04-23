@@ -571,6 +571,11 @@ function JsaFormView({ jsa, me, onSave, onSubmit, onApprove, onReject, onBack, s
               + Add Crew Member
             </button>
           )}
+          {canEdit && (
+            <p className="w-full text-center text-xs text-slate-400">
+              Signatures are saved when you tap Save Draft or Submit below.
+            </p>
+          )}
         </div>
       </Card>
 

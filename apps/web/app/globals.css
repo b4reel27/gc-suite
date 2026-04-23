@@ -9,10 +9,16 @@ html {
   background-color: #f8fafc;
 }
 
-/* Block Android Chrome Auto Dark Mode from inverting any element */
+/* Force light mode — blocks Android Chrome Auto Dark Mode and OS dark preference */
+@media (prefers-color-scheme: dark) {
+  html, body {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+  }
+}
+
 * {
   forced-color-adjust: none;
-  -webkit-text-fill-color: unset;
 }
 
 @layer base {
