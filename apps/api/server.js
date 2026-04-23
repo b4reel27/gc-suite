@@ -2221,12 +2221,12 @@ app.patch("/punch/:issueId/pin", requireAuth, async (req, res) => {
 app.get("/debug/rfi-table", async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='rfis'`
+      `SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema='public' AND table_name='rfis' ORDER BY ordinal_position`
     );
     const seqRows = await pool.query(
       `SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema='public' AND sequence_name='rfis_rfi_number_seq'`
     );
-    res.json({ tableExists: rows.length > 0, sequenceExists: seqRows.rows.length > 0 });
+    res.json({ columns: rows, sequenceExists: seqRows.rows.length > 0 });
   } catch (e) { res.json({ error: e.message }); }
 });
 
@@ -2243,6 +2243,9 @@ async function ensureNewTables() {
   )`).catch(() => {});
   // Add columns individually so an old/partial table schema gets patched
   await pool.query(`ALTER TABLE rfis ADD COLUMN IF NOT EXISTS rfi_number INTEGER DEFAULT nextval('rfis_rfi_number_seq')`).catch(() => {});
+  // Old schema had a "number" column with NOT NULL — neutralise it
+  await pool.query(`ALTER TABLE rfis ALTER COLUMN "number" DROP NOT NULL`).catch(() => {});
+  await pool.query(`ALTER TABLE rfis ALTER COLUMN "number" SET DEFAULT 0`).catch(() => {});
   await pool.query(`ALTER TABLE rfis ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id)`).catch(() => {});
   await pool.query(`ALTER TABLE rfis ADD COLUMN IF NOT EXISTS title TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE rfis ADD COLUMN IF NOT EXISTS question TEXT`).catch(() => {});
