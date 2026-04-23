@@ -4,6 +4,17 @@
   color-scheme: light;
 }
 
+html {
+  color-scheme: light;
+  background-color: #f8fafc;
+}
+
+/* Block Android Chrome Auto Dark Mode from inverting any element */
+* {
+  forced-color-adjust: none;
+  -webkit-text-fill-color: unset;
+}
+
 @layer base {
   html,
   body {
