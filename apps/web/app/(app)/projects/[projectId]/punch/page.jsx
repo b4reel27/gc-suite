@@ -895,31 +895,32 @@ export default function PunchPage() {
             </div>
 
             <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-black/10 bg-slate-50 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Detected Title
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">
-                  {quickParsingResult.title || "—"}
-                </div>
+              <div>
+                <label className={labelClass}>Title <span className="font-normal text-slate-400">(edit if needed)</span></label>
+                <input
+                  value={quickParsingResult.title}
+                  onChange={(e) => setQuickParsingResult((p) => ({ ...p, title: e.target.value }))}
+                  placeholder="Issue title"
+                  className={fieldClass}
+                />
               </div>
-
-              <div className="rounded-2xl border border-black/10 bg-slate-50 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Detected Trade
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">
-                  {quickParsingResult.trade || "—"}
-                </div>
+              <div>
+                <label className={labelClass}>Trade</label>
+                <input
+                  value={quickParsingResult.trade}
+                  onChange={(e) => setQuickParsingResult((p) => ({ ...p, trade: e.target.value }))}
+                  placeholder="e.g. Electrical"
+                  className={fieldClass}
+                />
               </div>
-
-              <div className="rounded-2xl border border-black/10 bg-slate-50 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Detected Location
-                </div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">
-                  {quickParsingResult.location || "—"}
-                </div>
+              <div>
+                <label className={labelClass}>Location</label>
+                <input
+                  value={quickParsingResult.location}
+                  onChange={(e) => setQuickParsingResult((p) => ({ ...p, location: e.target.value }))}
+                  placeholder="e.g. Room 103"
+                  className={fieldClass}
+                />
               </div>
             </div>
 

@@ -25,24 +25,7 @@ export default function ProjectLayout({ children }) {
     {
       label: "Add Photo",
       icon: "📷",
-      subLabel: "Add Photo to…",
-      subActions: [
-        {
-          label: "Issue",
-          icon: "⚠️",
-          href: `/projects/${projectId}/punch?entry=photo`,
-        },
-        {
-          label: "Schedule Item",
-          icon: "📅",
-          href: `/projects/${projectId}/schedule?entry=photo`,
-        },
-        {
-          label: "Daily Log",
-          icon: "📝",
-          href: `/projects/${projectId}/daily-log`,
-        },
-      ],
+      href: `/projects/${projectId}/punch?entry=photo`,
     },
   ];
 

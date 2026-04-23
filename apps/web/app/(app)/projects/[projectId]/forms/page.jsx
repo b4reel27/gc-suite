@@ -167,7 +167,11 @@ function InputField({ label, value, onChange, type = "text", placeholder = "", c
         onChange={(e) => !readOnly && onChange(e.target.value)}
         placeholder={placeholder}
         readOnly={readOnly}
-        className={`rounded-2xl border border-black/10 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 ${readOnly ? "opacity-60" : ""}`}
+        className={`rounded-2xl border px-3 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 ${
+          readOnly
+            ? "border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"
+            : "border-black/10 bg-white text-slate-900"
+        }`}
       />
     </div>
   );
@@ -185,9 +189,42 @@ function TextareaField({ label, value, onChange, placeholder = "", rows = 2, rea
         placeholder={placeholder}
         rows={rows}
         readOnly={readOnly}
-        className={`resize-none rounded-2xl border border-black/10 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 ${readOnly ? "opacity-60" : ""}`}
+        className={`resize-none rounded-2xl border px-3 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 ${
+          readOnly
+            ? "border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"
+            : "border-black/10 bg-white text-slate-900"
+        }`}
       />
     </div>
+  );
+}
+
+function CollapsibleSection({ label, children, defaultOpen = false, summary = "" }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Card>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 text-left"
+      >
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          {label}
+        </div>
+        <div className="flex items-center gap-2">
+          {!open && summary && (
+            <span className="text-xs text-slate-400">{summary}</span>
+          )}
+          <svg
+            className={`h-4 w-4 flex-shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {open && <div className="mt-4">{children}</div>}
+    </Card>
   );
 }
 
@@ -383,69 +420,37 @@ function JsaFormView({ jsa, me, onSave, onSubmit, onApprove, onReject, onBack, s
       </Card>
 
       {/* 2 — Emergency Contacts */}
-      <Card>
-        <SectionLabel>2 — Emergency Contacts</SectionLabel>
+      <CollapsibleSection
+        label="2 — Emergency Contacts"
+        defaultOpen={false}
+        summary={form.emergency_contacts.hospital_name ? form.emergency_contacts.hospital_name : "911 / tap to set hospital"}
+      >
         <div className="grid gap-4 sm:grid-cols-2">
-          <InputField
-            label="Fire Department"
-            value={form.emergency_contacts.fire}
-            onChange={(v) => setEC("fire", v)}
-            placeholder="911"
-            readOnly={!canEdit}
-          />
-          <InputField
-            label="Police"
-            value={form.emergency_contacts.police}
-            onChange={(v) => setEC("police", v)}
-            placeholder="911"
-            readOnly={!canEdit}
-          />
-          <InputField
-            label="Nearest Hospital"
-            value={form.emergency_contacts.hospital_name}
-            onChange={(v) => setEC("hospital_name", v)}
-            placeholder="Hospital name"
-            readOnly={!canEdit}
-          />
-          <InputField
-            label="Hospital Phone"
-            value={form.emergency_contacts.hospital_phone}
-            onChange={(v) => setEC("hospital_phone", v)}
-            placeholder="(555) 000-0000"
-            readOnly={!canEdit}
-          />
-          <InputField
-            label="Nearest ER / Address"
-            value={form.emergency_contacts.nearest_er}
-            onChange={(v) => setEC("nearest_er", v)}
-            placeholder="123 Main St, City, TX"
-            className="sm:col-span-2"
-            readOnly={!canEdit}
-          />
+          <InputField label="Fire Department" value={form.emergency_contacts.fire} onChange={(v) => setEC("fire", v)} placeholder="911" readOnly={!canEdit} />
+          <InputField label="Police" value={form.emergency_contacts.police} onChange={(v) => setEC("police", v)} placeholder="911" readOnly={!canEdit} />
+          <InputField label="Nearest Hospital" value={form.emergency_contacts.hospital_name} onChange={(v) => setEC("hospital_name", v)} placeholder="Hospital name" readOnly={!canEdit} />
+          <InputField label="Hospital Phone" value={form.emergency_contacts.hospital_phone} onChange={(v) => setEC("hospital_phone", v)} placeholder="(555) 000-0000" readOnly={!canEdit} />
+          <InputField label="Nearest ER / Address" value={form.emergency_contacts.nearest_er} onChange={(v) => setEC("nearest_er", v)} placeholder="123 Main St, City, TX" className="sm:col-span-2" readOnly={!canEdit} />
         </div>
-      </Card>
+      </CollapsibleSection>
 
       {/* 3 — Hazard Identification */}
-      <Card>
-        <SectionLabel>3 — Hazard Identification — check all that apply</SectionLabel>
-        <CheckboxGrid
-          items={HAZARD_TYPES}
-          selected={form.hazards}
-          onChange={(v) => set("hazards", v)}
-          readOnly={!canEdit}
-        />
-      </Card>
+      <CollapsibleSection
+        label="3 — Hazard Identification"
+        defaultOpen={form.hazards.length > 0}
+        summary={form.hazards.length > 0 ? `${form.hazards.length} selected` : "tap to select"}
+      >
+        <CheckboxGrid items={HAZARD_TYPES} selected={form.hazards} onChange={(v) => set("hazards", v)} readOnly={!canEdit} />
+      </CollapsibleSection>
 
       {/* 4 — Required PPE */}
-      <Card>
-        <SectionLabel>4 — Required PPE — check all that apply</SectionLabel>
-        <CheckboxGrid
-          items={PPE_TYPES}
-          selected={form.ppe}
-          onChange={(v) => set("ppe", v)}
-          readOnly={!canEdit}
-        />
-      </Card>
+      <CollapsibleSection
+        label="4 — Required PPE"
+        defaultOpen={form.ppe.length > 0}
+        summary={form.ppe.length > 0 ? `${form.ppe.length} selected` : "tap to select"}
+      >
+        <CheckboxGrid items={PPE_TYPES} selected={form.ppe} onChange={(v) => set("ppe", v)} readOnly={!canEdit} />
+      </CollapsibleSection>
 
       {/* 5 — Work Steps / JHA */}
       <Card>
@@ -504,81 +509,58 @@ function JsaFormView({ jsa, me, onSave, onSubmit, onApprove, onReject, onBack, s
 
       {/* 6 — Crew Acknowledgements */}
       <Card>
-        <SectionLabel>6 — Crew Acknowledgements</SectionLabel>
-        <div className="space-y-3">
+        <SectionLabel>6 — Crew Sign-Off</SectionLabel>
+        <div className="space-y-2">
           {form.crew.map((member, i) => (
-            <div key={i} className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Member {i + 1}
-                </span>
+            <div
+              key={i}
+              className={`rounded-2xl border p-3 transition ${
+                member.acknowledged
+                  ? "border-emerald-200 bg-emerald-50"
+                  : "border-black/10 bg-slate-50"
+              }`}
+            >
+              {/* Name + company row */}
+              <div className="mb-2 flex items-start gap-2">
+                <div className="flex-1 grid gap-2 sm:grid-cols-3">
+                  <InputField
+                    value={member.name}
+                    onChange={(v) => setCrew(i, "name", v)}
+                    placeholder="Full name"
+                    readOnly={!canEdit}
+                  />
+                  <InputField
+                    value={member.company}
+                    onChange={(v) => setCrew(i, "company", v)}
+                    placeholder="Company"
+                    readOnly={!canEdit}
+                  />
+                  <InputField
+                    value={member.trade}
+                    onChange={(v) => setCrew(i, "trade", v)}
+                    placeholder="Trade"
+                    readOnly={!canEdit}
+                  />
+                </div>
                 {canEdit && form.crew.length > 1 && (
-                  <button
-                    onClick={() => removeCrew(i)}
-                    className="text-xs text-red-500 hover:text-red-700"
-                  >
-                    Remove
-                  </button>
+                  <button onClick={() => removeCrew(i)} className="mt-1 flex-shrink-0 text-xs text-red-400 hover:text-red-700">✕</button>
                 )}
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <InputField
-                  label="Name"
-                  value={member.name}
-                  onChange={(v) => setCrew(i, "name", v)}
-                  placeholder="Full name"
-                  readOnly={!canEdit}
-                />
-                <InputField
-                  label="Company"
-                  value={member.company}
-                  onChange={(v) => setCrew(i, "company", v)}
-                  placeholder="Company name"
-                  readOnly={!canEdit}
-                />
-                <InputField
-                  label="Trade"
-                  value={member.trade}
-                  onChange={(v) => setCrew(i, "trade", v)}
-                  placeholder="e.g. Concrete Finisher"
-                  readOnly={!canEdit}
-                />
-                <InputField
-                  label="Time"
-                  type="time"
-                  value={member.time}
-                  onChange={(v) => setCrew(i, "time", v)}
-                  readOnly={!canEdit}
-                />
-              </div>
-              <div
-                className={`mt-3 flex items-start gap-3 ${canEdit ? "cursor-pointer" : ""}`}
+              {/* Big sign-off button */}
+              <button
+                type="button"
+                disabled={!canEdit}
                 onClick={() => canEdit && setCrew(i, "acknowledged", !member.acknowledged)}
+                className={`w-full rounded-xl py-2.5 text-sm font-bold transition ${
+                  member.acknowledged
+                    ? "bg-emerald-600 text-white"
+                    : canEdit
+                    ? "border border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
+                    : "border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                }`}
               >
-                <div
-                  className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border-2 transition ${
-                    member.acknowledged
-                      ? "border-emerald-600 bg-emerald-600"
-                      : "border-slate-300 bg-white"
-                  }`}
-                >
-                  {member.acknowledged && (
-                    <svg
-                      className="h-4 w-4 text-white"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={3}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </div>
-                <span className="text-sm leading-relaxed text-slate-700">
-                  I have reviewed this JSA and understand the hazards and controls associated
-                  with this work.
-                </span>
-              </div>
+                {member.acknowledged ? "✓ Signed — JSA Reviewed" : "Tap to Sign / Acknowledge JSA"}
+              </button>
             </div>
           ))}
           {canEdit && (

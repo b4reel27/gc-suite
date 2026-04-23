@@ -576,10 +576,26 @@ function CompileScreen({ log, apiBase, onDone, onBack }) {
               const tag = tags[entry.id] || null;
               const preview = entry.content || entry.caption || "Photo";
 
+              const tagMeta = {
+                issue:    { label: "⚠ Issue",         border: "border-amber-300",   bg: "bg-amber-50" },
+                schedule: { label: "📅 Schedule Item", border: "border-blue-300",    bg: "bg-blue-50" },
+                tomorrow: { label: "✓ Tomorrow",       border: "border-emerald-300", bg: "bg-emerald-50" },
+              };
+              const tagged = tag ? tagMeta[tag] : null;
+
               return (
-                <div key={entry.id} className="rounded-2xl border border-black/10 bg-slate-50 p-3">
-                  <div className="mb-1 text-[11px] text-slate-400">{prettyTime(entry.time)}</div>
-                  <p className="mb-3 text-sm text-slate-800 line-clamp-2">{preview}</p>
+                <div key={entry.id} className={`rounded-2xl border p-3 transition ${tagged ? `${tagged.border} ${tagged.bg}` : "border-black/10 bg-slate-50"}`}>
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-400">{prettyTime(entry.time)}</span>
+                    {tagged && (
+                      <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                        tag === "issue"    ? "border-amber-400 bg-amber-400 text-white" :
+                        tag === "schedule" ? "border-blue-400 bg-blue-400 text-white" :
+                        "border-emerald-500 bg-emerald-500 text-white"
+                      }`}>{tagged.label}</span>
+                    )}
+                  </div>
+                  <p className="mb-3 text-sm text-slate-800">{preview}</p>
 
                   {/* Tag pills */}
                   <div className="mb-3 flex flex-wrap gap-2">
