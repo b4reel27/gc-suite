@@ -2243,9 +2243,18 @@ async function ensureNewTables() {
   )`).catch(() => {});
   // Add columns individually so an old/partial table schema gets patched
   await pool.query(`ALTER TABLE rfis ADD COLUMN IF NOT EXISTS rfi_number INTEGER DEFAULT nextval('rfis_rfi_number_seq')`).catch(() => {});
-  // Old schema had a "number" column with NOT NULL — neutralise it
-  await pool.query(`ALTER TABLE rfis ALTER COLUMN "number" DROP NOT NULL`).catch(() => {});
+  // Drop NOT NULL from every legacy column so old unknown schemas don't block inserts
+  await pool.query(`
+    DO $$ DECLARE col RECORD; BEGIN
+      FOR col IN SELECT column_name FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='rfis'
+        AND is_nullable='NO' AND column_name <> 'id'
+      LOOP EXECUTE 'ALTER TABLE rfis ALTER COLUMN "' || col.column_name || '" DROP NOT NULL'; END LOOP;
+    END $$
+  `).catch(() => {});
+  // Also set a default on any legacy numeric/text columns that might lack one
   await pool.query(`ALTER TABLE rfis ALTER COLUMN "number" SET DEFAULT 0`).catch(() => {});
+  await pool.query(`ALTER TABLE rfis ALTER COLUMN "subject" SET DEFAULT ''`).catch(() => {});
   await pool.query(`ALTER TABLE rfis ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id)`).catch(() => {});
   await pool.query(`ALTER TABLE rfis ADD COLUMN IF NOT EXISTS title TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE rfis ADD COLUMN IF NOT EXISTS question TEXT`).catch(() => {});
