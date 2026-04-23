@@ -2218,7 +2218,65 @@ app.patch("/punch/:issueId/pin", requireAuth, async (req, res) => {
 
 // ─── RFIs ─────────────────────────────────────────────────────────────────────
 
+// Guarantee tables exist on first use — handles cases where startup migration
+// ran on an old deploy before these tables were added.
+let _tablesEnsured = false;
+async function ensureNewTables() {
+  if (_tablesEnsured) return;
+  _tablesEnsured = true;
+  await pool.query(`CREATE TABLE IF NOT EXISTS rfis (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    rfi_number SERIAL,
+    created_by_user_id UUID NOT NULL REFERENCES users(id),
+    title TEXT NOT NULL, question TEXT NOT NULL, to_name TEXT, due_date DATE,
+    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','ANSWERED','CLOSED')),
+    response TEXT, responded_by_user_id UUID REFERENCES users(id),
+    responded_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS rfis_project_id_idx ON rfis(project_id)`).catch(() => {});
+  await pool.query(`CREATE TABLE IF NOT EXISTS rfi_attachments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rfi_id UUID NOT NULL REFERENCES rfis(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL, original_name TEXT, mime_type TEXT,
+    uploaded_by_user_id UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+  await pool.query(`CREATE TABLE IF NOT EXISTS submittals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title TEXT NOT NULL, spec_section TEXT, submittal_type TEXT,
+    submitted_by TEXT, submitted_date DATE,
+    status TEXT NOT NULL DEFAULT 'Required',
+    notes TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS submittals_project_id_idx ON submittals(project_id)`).catch(() => {});
+  await pool.query(`CREATE TABLE IF NOT EXISTS submittal_attachments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    submittal_id UUID NOT NULL REFERENCES submittals(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL, original_name TEXT, mime_type TEXT,
+    uploaded_by_user_id UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+  await pool.query(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, endpoint)
+  )`).catch(() => {});
+  await pool.query(`CREATE TABLE IF NOT EXISTS plan_annotations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    sheet_id TEXT NOT NULL, rev TEXT NOT NULL DEFAULT '',
+    file_path TEXT NOT NULL, created_by_user_id UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS plan_annotations_sheet_idx ON plan_annotations(project_id, sheet_id)`).catch(() => {});
+}
+
 app.get("/projects/:projectId/rfis", requireAuth, async (req, res) => {
+  await ensureNewTables();
   try {
     const { projectId } = req.params;
     if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
@@ -2237,6 +2295,7 @@ app.get("/projects/:projectId/rfis", requireAuth, async (req, res) => {
 });
 
 app.post("/projects/:projectId/rfis", requireAuth, async (req, res) => {
+  await ensureNewTables();
   try {
     const { projectId } = req.params;
     if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
