@@ -2795,7 +2795,7 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { response_mime_type: "application/json", temperature: 0.1, maxOutputTokens: 300 },
     });
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key=${key}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
 
     let r = await fetch(geminiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody });
 
