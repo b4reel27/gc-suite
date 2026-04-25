@@ -295,6 +295,7 @@ export default function PunchPage() {
     location: "",
   });
   const [quickAddBusy, setQuickAddBusy] = useState(false);
+  const [aiParsing, setAiParsing] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
@@ -529,6 +530,28 @@ export default function PunchPage() {
     } catch (e) {
       setIsListening(false);
       setError(e?.message || "Speech recognition failed");
+    }
+  }
+
+  async function parseWithAI() {
+    if (!quickNote.trim()) return;
+    setAiParsing(true);
+    setError("");
+    try {
+      const r = await apiFetch("/ai/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: quickNote }),
+      });
+      setQuickParsingResult({
+        title:    r.title    || quickParsingResult.title    || "",
+        trade:    r.trade    || quickParsingResult.trade    || "",
+        location: r.location || quickParsingResult.location || "",
+      });
+    } catch {
+      // regex fallback already in state — no-op
+    } finally {
+      setAiParsing(false);
     }
   }
 
@@ -868,6 +891,17 @@ export default function PunchPage() {
                 }`}
               >
                 {isListening ? "Listening..." : "🎤 Speak Issue"}
+              </button>
+
+              <button
+                type="button"
+                onClick={parseWithAI}
+                disabled={!quickNote.trim() || aiParsing}
+                className={`${secondaryButtonClass} ${
+                  !quickNote.trim() || aiParsing ? "cursor-not-allowed opacity-50" : ""
+                }`}
+              >
+                {aiParsing ? "Parsing…" : "✨ AI Parse"}
               </button>
 
               <button

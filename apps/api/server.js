@@ -2734,6 +2734,77 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || "Server error" });
 });
 
+// ─── AI ───────────────────────────────────────────────────────────────────────
+
+app.post("/ai/parse", requireAuth, async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (!text?.trim()) return apiError(res, 400, "text required");
+
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return apiError(res, 503, "AI not configured");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const tmr   = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+
+    const prompt = `You are a construction superintendent assistant. Parse this rough field note into structured data.
+
+Field note: "${text.trim().replace(/"/g, "'")}"
+
+Today: ${today}  Tomorrow: ${tmr}
+
+Return ONLY valid JSON (no markdown, no code fences):
+{
+  "type": "issue" or "schedule" or "daily_log",
+  "title": "concise title max 8 words",
+  "description": "one sentence or empty string",
+  "trade": "one of [Electrical,Plumbing,HVAC,Drywall,Concrete,Flooring,Paint,Ceiling,Doors/Hardware,Glazing,Millwork,Roofing,Site,Framing,Steel,Masonry,General] or null",
+  "location": "location string or null",
+  "priority": "Low" or "Medium" or "High" or null,
+  "due_date": "YYYY-MM-DD or null",
+  "start_date": "YYYY-MM-DD or null"
+}
+
+type rules:
+- "issue" = problem, deficiency, punch item, something wrong or needs fixing
+- "schedule" = future activity, pour, delivery, crew arriving, inspection
+- "daily_log" = something that already happened today`;
+
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            response_mime_type: "application/json",
+            temperature: 0.1,
+            maxOutputTokens: 300,
+          },
+        }),
+      }
+    );
+
+    if (!r.ok) {
+      const errText = await r.text().catch(() => "");
+      console.error("Gemini error:", r.status, errText);
+      return apiError(res, 502, "AI service error");
+    }
+
+    const data = await r.json();
+    const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { parsed = {}; }
+
+    res.json(parsed);
+  } catch (e) {
+    console.error("AI parse error:", e);
+    return apiError(res, 500, "AI parse failed");
+  }
+});
+
 /* SERVER */
 
 const server = app.listen(PORT, HOST, () => {

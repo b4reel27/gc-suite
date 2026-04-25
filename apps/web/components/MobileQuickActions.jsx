@@ -11,7 +11,7 @@ export default function MobileQuickActions({
   const [subMenu, setSubMenu] = useState(null); // label of action whose subActions are shown
 
   const safeActions = useMemo(
-    () => actions.filter((a) => a && a.label && (a.href || a.subActions)),
+    () => actions.filter((a) => a && a.label && (a.href || a.subActions || a.onClick)),
     [actions]
   );
 
@@ -92,6 +92,23 @@ export default function MobileQuickActions({
                           </span>
                           <div className="flex-1 text-left">{action.label}</div>
                           <span className="text-slate-400">›</span>
+                        </button>
+                      ) : action.onClick ? (
+                        <button
+                          key={action.label}
+                          type="button"
+                          onClick={() => { close(); action.onClick(); }}
+                          className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm transition hover:bg-slate-50 ${
+                            action.highlight
+                              ? "border-slate-800 bg-slate-900 text-white hover:bg-slate-800"
+                              : "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
+                          }`}
+                        >
+                          <span className={`flex h-10 w-10 items-center justify-center rounded-2xl text-lg ${action.highlight ? "bg-white/10" : "bg-slate-100"}`}>
+                            {action.icon || "➕"}
+                          </span>
+                          <div className="flex-1 text-left">{action.label}</div>
+                          <span className={action.highlight ? "text-white/60" : "text-slate-400"}>→</span>
                         </button>
                       ) : (
                         <Link

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import ProjectHeader from "../../../../../components/ProjectHeader";
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -838,6 +838,8 @@ export default function DailyLogPage() {
   const { projectId } = useParams();
   const apiBase = useMemo(() => getApiBase(), []);
 
+  const searchParams = useSearchParams();
+
   const [view, setView]       = useState("log"); // 'log' | 'compile'
   const [addMode, setAddMode] = useState(null);  // null | 'note' | 'voice'
 
@@ -848,8 +850,14 @@ export default function DailyLogPage() {
   const [saving, setSaving]               = useState(false);
   const [actionError, setActionError]     = useState("");
 
-  // Note input
-  const [noteText, setNoteText] = useState("");
+  // Note input — pre-fill from Smart Capture ?note= param
+  const [noteText, setNoteText] = useState(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("note");
+      return p ? decodeURIComponent(p) : "";
+    }
+    return "";
+  });
 
   // Photo input ref
   const photoInputRef = useRef(null);
@@ -868,6 +876,12 @@ export default function DailyLogPage() {
     }
     return res.json();
   }
+
+  // If Smart Capture sent a note, open note input mode automatically
+  useEffect(() => {
+    const note = new URLSearchParams(window.location.search).get("note");
+    if (note) setAddMode("note");
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
