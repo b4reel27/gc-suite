@@ -2780,9 +2780,9 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
 
     const geminiBody = JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 500, response_mime_type: "application/json" },
     });
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${key}`;
 
     let r = await fetch(geminiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody });
 
@@ -2800,28 +2800,12 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
     }
 
     const data = await r.json();
-    const allParts = data?.candidates?.[0]?.content?.parts || [];
-
-    function extractJson(text) {
-      let si = text.indexOf("{");
-      while (si !== -1) {
-        let depth = 0, ei = -1;
-        for (let i = si; i < text.length; i++) {
-          if (text[i] === "{") depth++;
-          else if (text[i] === "}") { depth--; if (depth === 0) { ei = i; break; } }
-        }
-        if (ei !== -1) {
-          try { return JSON.parse(text.slice(si, ei + 1)); } catch (_) { si = text.indexOf("{", si + 1); }
-        } else break;
-      }
-      return null;
+    // 1.5-flash with response_mime_type returns clean JSON text directly — no thinking tokens
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    let parsed = {};
+    try { parsed = JSON.parse(rawText); } catch (_) {
+      console.error("Gemini JSON parse failed:", rawText.slice(0, 300));
     }
-
-    // Try answer parts first; fall back to all parts (model sometimes puts JSON in thinking)
-    const answerText = allParts.filter((p) => !p.thought).map((p) => p.text || "").join("");
-    const fullText   = allParts.map((p) => p.text || "").join("");
-    const parsed = extractJson(answerText) || extractJson(fullText) || {};
-    if (!parsed.type) console.error("AI parse empty. answer:", answerText.slice(0, 200));
 
     res.json(parsed);
   } catch (e) {
