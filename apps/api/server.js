@@ -2813,19 +2813,22 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
     }
 
     const data = await r.json();
-    // Collect text from all parts (2.5-flash may split thinking + answer)
+    // 2.5-flash returns thinking tokens (thought:true) + answer as separate parts
+    // Only use the answer parts to avoid grabbing stray {} from thinking text
     const allParts = data?.candidates?.[0]?.content?.parts || [];
-    const fullText = allParts.map((p) => p.text || "").join("");
+    const answerText = allParts
+      .filter((p) => !p.thought)
+      .map((p) => p.text || "")
+      .join("");
 
-    // Extract the first {...} JSON block from the response
-    const jsonMatch = fullText.match(/\{[\s\S]*\}/);
+    const jsonMatch = answerText.match(/\{[\s\S]*\}/);
     let parsed = {};
     if (jsonMatch) {
       try { parsed = JSON.parse(jsonMatch[0]); } catch (e) {
-        console.error("JSON parse failed:", e.message);
+        console.error("JSON parse failed:", e.message, answerText.slice(0, 300));
       }
     } else {
-      console.error("No JSON found in Gemini response:", fullText.slice(0, 300));
+      console.error("No JSON in answer parts:", answerText.slice(0, 300));
     }
 
     res.json(parsed);
