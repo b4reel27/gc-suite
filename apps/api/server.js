@@ -2736,6 +2736,25 @@ app.use((err, _req, res, _next) => {
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
 
+app.get("/debug/ai", async (_req, res) => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return res.json({ configured: false, error: "GEMINI_API_KEY not set" });
+  try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: "Reply with just: ok" }] }] }),
+      }
+    );
+    const body = await r.json();
+    res.json({ configured: true, status: r.status, ok: r.ok, body });
+  } catch (e) {
+    res.json({ configured: true, error: e.message });
+  }
+});
+
 app.post("/ai/parse", requireAuth, async (req, res) => {
   try {
     const { text } = req.body || {};
