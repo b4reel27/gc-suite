@@ -2798,8 +2798,6 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
         temperature: 0.1,
         maxOutputTokens: 500,
       },
-      // Disable thinking tokens — not needed for structured extraction
-      thinkingConfig: { thinkingBudget: 0 },
     });
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
 
