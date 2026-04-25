@@ -2800,32 +2800,28 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
     }
 
     const data = await r.json();
-    // 2.5-flash returns thinking tokens (thought:true) + answer as separate parts
-    // Only use the answer parts to avoid grabbing stray {} from thinking text
     const allParts = data?.candidates?.[0]?.content?.parts || [];
-    const answerText = allParts
-      .filter((p) => !p.thought)
-      .map((p) => p.text || "")
-      .join("");
 
-    // Extract the first balanced JSON object (greedy regex fails when trailing text has {})
-    let parsed = {};
-    let startIdx = answerText.indexOf("{");
-    while (startIdx !== -1) {
-      let depth = 0, endIdx = -1;
-      for (let i = startIdx; i < answerText.length; i++) {
-        if (answerText[i] === "{") depth++;
-        else if (answerText[i] === "}") { depth--; if (depth === 0) { endIdx = i; break; } }
-      }
-      if (endIdx !== -1) {
-        try { parsed = JSON.parse(answerText.slice(startIdx, endIdx + 1)); break; } catch (_) {
-          startIdx = answerText.indexOf("{", startIdx + 1);
+    function extractJson(text) {
+      let si = text.indexOf("{");
+      while (si !== -1) {
+        let depth = 0, ei = -1;
+        for (let i = si; i < text.length; i++) {
+          if (text[i] === "{") depth++;
+          else if (text[i] === "}") { depth--; if (depth === 0) { ei = i; break; } }
         }
-      } else break;
+        if (ei !== -1) {
+          try { return JSON.parse(text.slice(si, ei + 1)); } catch (_) { si = text.indexOf("{", si + 1); }
+        } else break;
+      }
+      return null;
     }
-    if (!parsed || !Object.keys(parsed).length) {
-      console.error("No JSON in answer parts:", answerText.slice(0, 300));
-    }
+
+    // Try answer parts first; fall back to all parts (model sometimes puts JSON in thinking)
+    const answerText = allParts.filter((p) => !p.thought).map((p) => p.text || "").join("");
+    const fullText   = allParts.map((p) => p.text || "").join("");
+    const parsed = extractJson(answerText) || extractJson(fullText) || {};
+    if (!parsed.type) console.error("AI parse empty. answer:", answerText.slice(0, 200));
 
     res.json(parsed);
   } catch (e) {
