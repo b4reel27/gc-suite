@@ -2768,7 +2768,15 @@ Return ONLY valid JSON (no markdown, no code fences):
 type rules:
 - "issue" = problem, deficiency, punch item, something wrong or needs fixing
 - "schedule" = future activity, pour, delivery, crew arriving, inspection
-- "daily_log" = something that already happened today`;
+- "daily_log" = something that already happened today
+
+trade rules — pick the PRIMARY trade the work belongs to, not incidental mentions:
+- "ceiling grid" → Ceiling (not Electrical, even if "lights" is mentioned)
+- "outlet/switch/panel/breaker/conduit/wire" → Electrical
+- "pipe/drain/toilet/sink/water line" → Plumbing
+- "duct/diffuser/RTU/air handler/thermostat" → HVAC
+- "drywall/sheetrock/mud/tape" → Drywall
+- When in doubt, use the trade that owns the deficiency, not a trade mentioned in context`;
 
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,

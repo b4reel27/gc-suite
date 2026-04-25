@@ -37,11 +37,14 @@ export default function SmartCaptureModal({ projectId, onClose }) {
     const rec = new SR();
     rec.continuous = false;
     rec.interimResults = false;
-    rec.onresult  = (e) => {
-      const t = Array.from(e.results).map((r) => r[0].transcript).join(" ");
-      setText((prev) => (prev ? prev + " " + t : t));
+    let resultHandled = false;
+    rec.onresult = (e) => {
+      if (resultHandled) return;
+      resultHandled = true;
+      const t = Array.from(e.results).map((r) => r[0].transcript).join(" ").trim();
+      if (t) setText((prev) => (prev ? prev + " " + t : t));
     };
-    rec.onend  = () => setListening(false);
+    rec.onend   = () => setListening(false);
     rec.onerror = () => setListening(false);
     rec.start();
     recRef.current = rec;

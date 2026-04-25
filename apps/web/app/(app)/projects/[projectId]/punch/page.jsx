@@ -521,9 +521,16 @@ export default function PunchPage() {
         setError(event?.error ? `Speech error: ${event.error}` : "Speech recognition failed");
       };
 
+      // Use a flag so Android Chrome's duplicate onresult fires don't double-append
+      let resultHandled = false;
       recognition.onresult = (event) => {
-        const transcript = event?.results?.[0]?.[0]?.transcript || "";
-        setQuickNote((prev) => cleanSpaces([prev, transcript].filter(Boolean).join(" ")));
+        if (resultHandled) return;
+        resultHandled = true;
+        const transcript = Array.from(event.results)
+          .map((r) => r[0].transcript)
+          .join(" ")
+          .trim();
+        if (transcript) setQuickNote((prev) => cleanSpaces([prev, transcript].filter(Boolean).join(" ")));
       };
 
       recognition.start();
