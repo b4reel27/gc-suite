@@ -2435,6 +2435,96 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || "Server error" });
 });
 
+// ─── AI ───────────────────────────────────────────────────────────────────────
+
+app.post("/ai/parse", requireAuth, async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (!text?.trim()) return apiError(res, 400, "text required");
+
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return apiError(res, 503, "AI not configured");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const tmr   = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+
+    const prompt = `You are a construction superintendent assistant. Parse this rough field note into structured data.
+
+Field note: "${text.trim().replace(/"/g, "'")}"
+
+Today: ${today}  Tomorrow: ${tmr}
+
+Return ONLY valid JSON (no markdown, no code fences):
+{
+  "type": "issue" or "schedule" or "daily_log",
+  "title": "concise title max 8 words",
+  "description": "one sentence or empty string",
+  "trade": "one of [Electrical,Plumbing,HVAC,Drywall,Concrete,Flooring,Paint,Ceiling,Doors/Hardware,Glazing,Millwork,Roofing,Site,Framing,Steel,Masonry,General] or null",
+  "location": "location string or null",
+  "priority": "Low" or "Medium" or "High" or null,
+  "due_date": "YYYY-MM-DD or null",
+  "start_date": "YYYY-MM-DD or null"
+}
+
+type rules:
+- "issue" = problem, deficiency, punch item, something wrong or needs fixing
+- "schedule" = future activity, pour, delivery, crew arriving, inspection
+- "daily_log" = something that already happened today
+
+trade rules — pick the PRIMARY trade the work belongs to, not incidental mentions:
+- "ceiling grid" → Ceiling (not Electrical, even if "lights" is mentioned)
+- "outlet/switch/panel/breaker/conduit/wire" → Electrical
+- "pipe/drain/toilet/sink/water line" → Plumbing
+- "duct/diffuser/RTU/air handler/thermostat" → HVAC
+- "drywall/sheetrock/mud/tape" → Drywall
+- When in doubt, use the trade that owns the deficiency, not a trade mentioned in context`;
+
+    const geminiBody = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
+    });
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+
+    let r = await fetch(geminiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody });
+
+    // Retry once after 2s on rate-limit
+    if (r.status === 429) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      r = await fetch(geminiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody });
+    }
+
+    if (!r.ok) {
+      const errText = await r.text().catch(() => "");
+      console.error("Gemini error:", r.status, errText);
+      const msg = r.status === 429 ? "AI is busy — wait a moment and try again" : "AI service error";
+      return apiError(res, r.status === 429 ? 429 : 502, msg);
+    }
+
+    const data = await r.json();
+    // 2.5-flash returns thinking tokens (thought:true) + answer as separate parts
+    // Only use the answer parts to avoid grabbing stray {} from thinking text
+    const allParts = data?.candidates?.[0]?.content?.parts || [];
+    const answerText = allParts
+      .filter((p) => !p.thought)
+      .map((p) => p.text || "")
+      .join("");
+
+    const jsonMatch = answerText.match(/\{[\s\S]*\}/);
+    let parsed = {};
+    if (jsonMatch) {
+      try { parsed = JSON.parse(jsonMatch[0]); } catch (e) {
+        console.error("JSON parse failed:", e.message, answerText.slice(0, 300));
+      }
+    } else {
+      console.error("No JSON in answer parts:", answerText.slice(0, 300));
+    }
+
+    res.json(parsed);
+  } catch (e) {
+    console.error("AI parse error:", e);
+    return apiError(res, 500, "AI parse failed");
+  }
+});
 /* SERVER */
 
 const server = app.listen(PORT, HOST, () => {
