@@ -2793,7 +2793,13 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
 
     const geminiBody = JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { response_mime_type: "application/json", temperature: 0.1, maxOutputTokens: 300 },
+      generationConfig: {
+        response_mime_type: "application/json",
+        temperature: 0.1,
+        maxOutputTokens: 500,
+      },
+      // Disable thinking tokens — not needed for structured extraction
+      thinkingConfig: { thinkingBudget: 0 },
     });
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
 
@@ -2813,10 +2819,17 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
     }
 
     const data = await r.json();
-    const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    console.log("Gemini raw response:", JSON.stringify(data?.candidates?.[0]?.content));
+    let raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+
+    // Strip markdown code fences if Gemini wrapped the JSON
+    raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
 
     let parsed;
-    try { parsed = JSON.parse(raw); } catch { parsed = {}; }
+    try { parsed = JSON.parse(raw); } catch (e) {
+      console.error("JSON parse failed:", e.message, "raw:", raw.slice(0, 200));
+      parsed = {};
+    }
 
     res.json(parsed);
   } catch (e) {
