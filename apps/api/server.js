@@ -2778,26 +2778,25 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
 - "drywall/sheetrock/mud/tape" → Drywall
 - When in doubt, use the trade that owns the deficiency, not a trade mentioned in context`;
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            response_mime_type: "application/json",
-            temperature: 0.1,
-            maxOutputTokens: 300,
-          },
-        }),
-      }
-    );
+    const geminiBody = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { response_mime_type: "application/json", temperature: 0.1, maxOutputTokens: 300 },
+    });
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+
+    let r = await fetch(geminiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody });
+
+    // Retry once after 2s on rate-limit
+    if (r.status === 429) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      r = await fetch(geminiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody });
+    }
 
     if (!r.ok) {
       const errText = await r.text().catch(() => "");
       console.error("Gemini error:", r.status, errText);
-      return apiError(res, 502, "AI service error");
+      const msg = r.status === 429 ? "AI is busy — wait a moment and try again" : "AI service error";
+      return apiError(res, r.status === 429 ? 429 : 502, msg);
     }
 
     const data = await r.json();

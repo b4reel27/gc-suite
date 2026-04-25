@@ -63,7 +63,10 @@ export default function SmartCaptureModal({ projectId, onClose }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ text }),
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Parse failed");
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error || (r.status === 429 ? "AI is busy — wait a moment and try again" : "Parse failed"));
+      }
       const data = await r.json();
       if (!data.title) throw new Error("AI returned no result — try rephrasing.");
       setResult(data);
