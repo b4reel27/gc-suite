@@ -2747,40 +2747,30 @@ app.post("/ai/parse", requireAuth, async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
     const tmr   = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
 
-    const prompt = `You are a construction superintendent assistant. Parse this rough field note into structured data.
+    const prompt = `You are a construction superintendent assistant. Parse this field note.
 
 Field note: "${text.trim().replace(/"/g, "'")}"
-
 Today: ${today}  Tomorrow: ${tmr}
 
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "type": "issue" or "schedule" or "daily_log",
-  "title": "concise title max 8 words",
-  "description": "one sentence or empty string",
-  "trade": "one of [Electrical,Plumbing,HVAC,Drywall,Concrete,Flooring,Paint,Ceiling,Doors/Hardware,Glazing,Millwork,Roofing,Site,Framing,Steel,Masonry,General] or null",
-  "location": "location string or null",
-  "priority": "Low" or "Medium" or "High" or null,
-  "due_date": "YYYY-MM-DD or null",
-  "start_date": "YYYY-MM-DD or null"
-}
+Reply with EXACTLY one line, no other text:
+TYPE|TITLE|TRADE|LOCATION|PRIORITY|DUE_DATE|START_DATE
 
-type rules:
-- "issue" = problem, deficiency, punch item, something wrong or needs fixing
-- "schedule" = future activity, pour, delivery, crew arriving, inspection
-- "daily_log" = something that already happened today
+TYPE = issue, schedule, or daily_log
+TITLE = concise label max 8 words
+TRADE = one of: Electrical Plumbing HVAC Drywall Concrete Flooring Paint Ceiling Doors/Hardware Glazing Millwork Roofing Site Framing Steel Masonry General — or null
+LOCATION = location string or null
+PRIORITY = Low Medium High or null
+DUE_DATE = YYYY-MM-DD or null
+START_DATE = YYYY-MM-DD or null
 
-trade rules — pick the PRIMARY trade the work belongs to, not incidental mentions:
-- "ceiling grid" → Ceiling (not Electrical, even if "lights" is mentioned)
-- "outlet/switch/panel/breaker/conduit/wire" → Electrical
-- "pipe/drain/toilet/sink/water line" → Plumbing
-- "duct/diffuser/RTU/air handler/thermostat" → HVAC
-- "drywall/sheetrock/mud/tape" → Drywall
-- When in doubt, use the trade that owns the deficiency, not a trade mentioned in context`;
+type: issue=problem/deficiency, schedule=future event, daily_log=happened today
+trade: door/glass/storefront→Glazing; ceiling grid→Ceiling; outlet/wire→Electrical; pipe/drain→Plumbing
+
+Example: issue|Door dragging North Entry|Glazing|North Entry|Medium|null|null`;
 
     const geminiBody = JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 100 },
     });
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
 
@@ -2798,28 +2788,28 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
     }
 
     const data = await r.json();
-    // Scan ALL parts (thinking + answer) and pick the first JSON object that has type+title
-    const fullText = (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("\n");
-    let parsed = null;
-    let si = fullText.indexOf("{");
-    while (si !== -1) {
-      let depth = 0, ei = -1;
-      for (let i = si; i < fullText.length; i++) {
-        if (fullText[i] === "{") depth++;
-        else if (fullText[i] === "}") { depth--; if (depth === 0) { ei = i; break; } }
+    const allText = (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("\n");
+
+    // Find the pipe-delimited answer line (immune to thinking-token noise)
+    const TYPES = ["issue", "schedule", "daily_log"];
+    let parsed = {};
+    for (const line of allText.split("\n")) {
+      const p = line.trim().split("|");
+      if (p.length === 7 && TYPES.includes(p[0])) {
+        const nn = (v) => (v === "null" || !v ? null : v.trim());
+        parsed = {
+          type:       p[0],
+          title:      p[1]?.trim() || null,
+          trade:      nn(p[2]),
+          location:   nn(p[3]),
+          priority:   nn(p[4]),
+          due_date:   nn(p[5]),
+          start_date: nn(p[6]),
+        };
+        break;
       }
-      if (ei !== -1) {
-        try {
-          const obj = JSON.parse(fullText.slice(si, ei + 1));
-          if (obj.type && obj.title) { parsed = obj; break; }
-        } catch (_) {}
-        si = fullText.indexOf("{", si + 1);
-      } else break;
     }
-    if (!parsed) {
-      console.error("AI parse: no valid JSON with type+title found in:", fullText.slice(0, 400));
-      parsed = {};
-    }
+    if (!parsed.title) console.error("AI pipe parse failed. raw:", allText.slice(0, 400));
 
     res.json(parsed);
   } catch (e) {
