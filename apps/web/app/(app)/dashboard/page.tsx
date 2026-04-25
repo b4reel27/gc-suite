@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import MobileQuickActions from "../../../components/MobileQuickActions";
+import SmartCaptureModal from "../../../components/SmartCaptureModal";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const ISSUE_ROUTE = "punch";
@@ -142,6 +143,7 @@ export default function DashboardPage() {
   const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showCapture, setShowCapture] = useState(false);
 
   useEffect(() => {
     const pid = getActiveProjectId();
@@ -407,6 +409,7 @@ export default function DashboardPage() {
 
       <MobileQuickActions
         actions={[
+          { label: "Smart Capture", icon: "✨", highlight: true, onClick: () => setShowCapture(true) },
           { label: "New Issue", icon: "📸", href: projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#" },
           { label: "Daily Log", icon: "📝", href: projectId ? `/projects/${projectId}/daily-log` : "#" },
           { label: "New JSA", icon: "🦺", href: projectId ? `/projects/${projectId}/forms` : "#" },
@@ -414,6 +417,12 @@ export default function DashboardPage() {
         ]}
         inset="bottom-5 right-4"
       />
+      {showCapture && projectId && (
+        <SmartCaptureModal
+          projectId={projectId}
+          onClose={() => setShowCapture(false)}
+        />
+      )}
     </div>
   );
 }

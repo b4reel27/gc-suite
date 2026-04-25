@@ -2736,19 +2736,6 @@ app.use((err, _req, res, _next) => {
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
 
-app.get("/debug/ai", async (_req, res) => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.json({ configured: false, error: "GEMINI_API_KEY not set" });
-  try {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-    const body = await r.json();
-    const models = (body.models || []).map((m) => m.name);
-    res.json({ configured: true, status: r.status, models });
-  } catch (e) {
-    res.json({ configured: true, error: e.message });
-  }
-});
-
 app.post("/ai/parse", requireAuth, async (req, res) => {
   try {
     const { text } = req.body || {};
@@ -2821,13 +2808,22 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
       .map((p) => p.text || "")
       .join("");
 
-    const jsonMatch = answerText.match(/\{[\s\S]*\}/);
+    // Extract the first balanced JSON object (greedy regex fails when trailing text has {})
     let parsed = {};
-    if (jsonMatch) {
-      try { parsed = JSON.parse(jsonMatch[0]); } catch (e) {
-        console.error("JSON parse failed:", e.message, answerText.slice(0, 300));
+    let startIdx = answerText.indexOf("{");
+    while (startIdx !== -1) {
+      let depth = 0, endIdx = -1;
+      for (let i = startIdx; i < answerText.length; i++) {
+        if (answerText[i] === "{") depth++;
+        else if (answerText[i] === "}") { depth--; if (depth === 0) { endIdx = i; break; } }
       }
-    } else {
+      if (endIdx !== -1) {
+        try { parsed = JSON.parse(answerText.slice(startIdx, endIdx + 1)); break; } catch (_) {
+          startIdx = answerText.indexOf("{", startIdx + 1);
+        }
+      } else break;
+    }
+    if (!parsed || !Object.keys(parsed).length) {
       console.error("No JSON in answer parts:", answerText.slice(0, 300));
     }
 
