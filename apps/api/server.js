@@ -2793,11 +2793,7 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
 
     const geminiBody = JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        response_mime_type: "application/json",
-        temperature: 0.1,
-        maxOutputTokens: 500,
-      },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
     });
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
 
@@ -2817,16 +2813,19 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
     }
 
     const data = await r.json();
-    console.log("Gemini raw response:", JSON.stringify(data?.candidates?.[0]?.content));
-    let raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    // Collect text from all parts (2.5-flash may split thinking + answer)
+    const allParts = data?.candidates?.[0]?.content?.parts || [];
+    const fullText = allParts.map((p) => p.text || "").join("");
 
-    // Strip markdown code fences if Gemini wrapped the JSON
-    raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
-
-    let parsed;
-    try { parsed = JSON.parse(raw); } catch (e) {
-      console.error("JSON parse failed:", e.message, "raw:", raw.slice(0, 200));
-      parsed = {};
+    // Extract the first {...} JSON block from the response
+    const jsonMatch = fullText.match(/\{[\s\S]*\}/);
+    let parsed = {};
+    if (jsonMatch) {
+      try { parsed = JSON.parse(jsonMatch[0]); } catch (e) {
+        console.error("JSON parse failed:", e.message);
+      }
+    } else {
+      console.error("No JSON found in Gemini response:", fullText.slice(0, 300));
     }
 
     res.json(parsed);
