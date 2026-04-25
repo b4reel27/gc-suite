@@ -2509,13 +2509,22 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
       .map((p) => p.text || "")
       .join("");
 
-    const jsonMatch = answerText.match(/\{[\s\S]*\}/);
+    // Extract the first balanced JSON object (greedy regex fails when trailing text has {})
     let parsed = {};
-    if (jsonMatch) {
-      try { parsed = JSON.parse(jsonMatch[0]); } catch (e) {
-        console.error("JSON parse failed:", e.message, answerText.slice(0, 300));
+    let startIdx = answerText.indexOf("{");
+    while (startIdx !== -1) {
+      let depth = 0, endIdx = -1;
+      for (let i = startIdx; i < answerText.length; i++) {
+        if (answerText[i] === "{") depth++;
+        else if (answerText[i] === "}") { depth--; if (depth === 0) { endIdx = i; break; } }
       }
-    } else {
+      if (endIdx !== -1) {
+        try { parsed = JSON.parse(answerText.slice(startIdx, endIdx + 1)); break; } catch (_) {
+          startIdx = answerText.indexOf("{", startIdx + 1);
+        }
+      } else break;
+    }
+    if (!parsed || !Object.keys(parsed).length) {
       console.error("No JSON in answer parts:", answerText.slice(0, 300));
     }
 

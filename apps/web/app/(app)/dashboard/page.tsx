@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import MobileQuickActions from "../../../components/MobileQuickActions";
+import SmartCaptureModal from "../../../components/SmartCaptureModal";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const ISSUE_ROUTE = "punch";
@@ -320,6 +321,7 @@ export default function DashboardPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showCapture, setShowCapture] = useState(false);
 
   useEffect(() => {
     const pid = getActiveProjectId();
@@ -828,18 +830,14 @@ export default function DashboardPage() {
       <MobileQuickActions
         actions={[
           {
+            label: "Smart Capture",
+            icon: "✨",
+            highlight: true,
+            onClick: () => setShowCapture(true),
+          },
+          {
             label: "New Issue",
             icon: "📸",
-            href: projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#",
-          },
-          {
-            label: "New Schedule",
-            icon: "📅",
-            href: projectId ? `/projects/${projectId}/schedule` : "#",
-          },
-          {
-            label: "Add Photo",
-            icon: "📷",
             href: projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#",
           },
           {
@@ -847,9 +845,25 @@ export default function DashboardPage() {
             icon: "📝",
             href: projectId ? `/projects/${projectId}/daily-log` : "#",
           },
+          {
+            label: "New JSA",
+            icon: "🦺",
+            href: projectId ? `/projects/${projectId}/forms` : "#",
+          },
+          {
+            label: "Schedule",
+            icon: "📅",
+            href: projectId ? `/projects/${projectId}/schedule` : "#",
+          },
         ]}
         inset="bottom-5 right-4"
       />
+      {showCapture && projectId && (
+        <SmartCaptureModal
+          projectId={projectId}
+          onClose={() => setShowCapture(false)}
+        />
+      )}
     </div>
   );
 }
