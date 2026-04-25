@@ -2741,7 +2741,7 @@ app.get("/debug/ai", async (_req, res) => {
   if (!key) return res.json({ configured: false, error: "GEMINI_API_KEY not set" });
   try {
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key=${key}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2801,7 +2801,7 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { response_mime_type: "application/json", temperature: 0.1, maxOutputTokens: 300 },
     });
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key=${key}`;
 
     let r = await fetch(geminiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody });
 
