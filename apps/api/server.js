@@ -2780,13 +2780,12 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
 
     const geminiBody = JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 500, response_mime_type: "application/json" },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
     });
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${key}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
 
     let r = await fetch(geminiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody });
 
-    // Retry once after 2s on rate-limit
     if (r.status === 429) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       r = await fetch(geminiUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: geminiBody });
@@ -2795,16 +2794,31 @@ trade rules — pick the PRIMARY trade the work belongs to, not incidental menti
     if (!r.ok) {
       const errText = await r.text().catch(() => "");
       console.error("Gemini error:", r.status, errText);
-      const msg = r.status === 429 ? "AI is busy — wait a moment and try again" : "AI service error";
-      return apiError(res, r.status === 429 ? 429 : 502, msg);
+      return apiError(res, r.status === 429 ? 429 : 502, r.status === 429 ? "AI is busy — wait a moment and try again" : "AI service error");
     }
 
     const data = await r.json();
-    // 1.5-flash with response_mime_type returns clean JSON text directly — no thinking tokens
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    let parsed = {};
-    try { parsed = JSON.parse(rawText); } catch (_) {
-      console.error("Gemini JSON parse failed:", rawText.slice(0, 300));
+    // Scan ALL parts (thinking + answer) and pick the first JSON object that has type+title
+    const fullText = (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("\n");
+    let parsed = null;
+    let si = fullText.indexOf("{");
+    while (si !== -1) {
+      let depth = 0, ei = -1;
+      for (let i = si; i < fullText.length; i++) {
+        if (fullText[i] === "{") depth++;
+        else if (fullText[i] === "}") { depth--; if (depth === 0) { ei = i; break; } }
+      }
+      if (ei !== -1) {
+        try {
+          const obj = JSON.parse(fullText.slice(si, ei + 1));
+          if (obj.type && obj.title) { parsed = obj; break; }
+        } catch (_) {}
+        si = fullText.indexOf("{", si + 1);
+      } else break;
+    }
+    if (!parsed) {
+      console.error("AI parse: no valid JSON with type+title found in:", fullText.slice(0, 400));
+      parsed = {};
     }
 
     res.json(parsed);
