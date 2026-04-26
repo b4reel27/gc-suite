@@ -851,16 +851,16 @@ export default function DailyLogPage() {
   const [actionError, setActionError]     = useState("");
 
   // Note input — pre-fill from Smart Capture ?note= param
-  const [noteText, setNoteText] = useState(() => {
-    if (typeof window !== "undefined") {
-      const p = new URLSearchParams(window.location.search).get("note");
-      return p ? decodeURIComponent(p) : "";
-    }
-    return "";
-  });
+  const [noteText, setNoteText] = useState("");
 
-  // Photo input ref
-  const photoInputRef = useRef(null);
+  // If Smart Capture sent a note, open note input mode automatically
+  useEffect(() => {
+    const note = searchParams.get("note");
+    if (note) {
+      setNoteText(decodeURIComponent(note));
+      setAddMode("note");
+    }
+  }, [searchParams]);
 
   async function apiFetch(path, opts = {}) {
     const token = getToken();
@@ -876,12 +876,6 @@ export default function DailyLogPage() {
     }
     return res.json();
   }
-
-  // If Smart Capture sent a note, open note input mode automatically
-  useEffect(() => {
-    const note = new URLSearchParams(window.location.search).get("note");
-    if (note) setAddMode("note");
-  }, []);
 
   useEffect(() => {
     let cancelled = false;

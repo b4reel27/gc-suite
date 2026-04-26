@@ -98,7 +98,7 @@ export default function SmartCaptureModal({ projectId, onClose }) {
         router.push(`/projects/${projectId}/punch`);
       } else if (result.type === "schedule") {
         const date = result.start_date || result.due_date || new Date().toISOString().slice(0, 10);
-        const r = await fetch(`${API_BASE}/projects/${projectId}/schedule-items`, {
+        const r = await fetch(`${API_BASE}/projects/${projectId}/schedule`, {
           method: "POST", headers,
           body: JSON.stringify({
             title:      result.title,
