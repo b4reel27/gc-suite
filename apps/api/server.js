@@ -2770,7 +2770,7 @@ Example: issue|Door dragging North Entry|Glazing|North Entry|Medium|null|null`;
 
     const geminiBody = JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 100 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1000 },
     });
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
 
@@ -2795,7 +2795,7 @@ Example: issue|Door dragging North Entry|Glazing|North Entry|Medium|null|null`;
     for (const line of allText.split("\n")) {
       const fields = line.trim().split("|").map((f) => f.trim());
       const rawType = fields[0]?.toLowerCase().replace(/[\s-]+/g, "_");
-      if (fields.length >= 7 && TYPES.includes(rawType)) {
+      if (fields.length >= 2 && fields[1] && TYPES.includes(rawType)) {
         const nn = (v) => (!v || v.toLowerCase() === "null" ? null : v);
         parsed = {
           type:       rawType,
