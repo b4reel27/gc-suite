@@ -853,6 +853,9 @@ export default function DailyLogPage() {
   // Note input — pre-fill from Smart Capture ?note= param
   const [noteText, setNoteText] = useState("");
 
+  // Photo input ref
+  const photoInputRef = useRef(null);
+
   // If Smart Capture sent a note, open note input mode automatically
   useEffect(() => {
     const note = searchParams.get("note");
