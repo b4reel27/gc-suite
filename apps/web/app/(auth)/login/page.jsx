@@ -32,6 +32,8 @@ function LoginInner() {
 
       localStorage.setItem("token", data.token);
       if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
+      // Also set cookie so server components (Plans page) can read the token
+      document.cookie = `gc_token=${data.token};path=/;max-age=86400;SameSite=Lax`;
 
       router.replace(next);
     } catch (err) {

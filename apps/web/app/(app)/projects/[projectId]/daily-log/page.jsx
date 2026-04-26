@@ -1003,7 +1003,7 @@ export default function DailyLogPage() {
           log={log}
           apiBase={apiBase}
           onBack={() => setView("log")}
-          onDone={() => { setView("log"); apiFetch(`/projects/${projectId}/daily-log/today`).then(setLog).catch(() => {}); }}
+          onDone={() => { setView("log"); setLog((prev) => prev ? { ...prev, status: "COMPILED" } : prev); }}
         />
       </div>
     );
