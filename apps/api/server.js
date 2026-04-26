@@ -2790,26 +2790,39 @@ Example: issue|Door dragging North Entry|Glazing|North Entry|Medium|null|null`;
     const data = await r.json();
     const allText = (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("\n");
 
-    // Find the pipe-delimited answer line (immune to thinking-token noise)
     const TYPES = ["issue", "schedule", "daily_log"];
-    let parsed = {};
+    let parsed = null;
     for (const line of allText.split("\n")) {
-      const p = line.trim().split("|");
-      if (p.length === 7 && TYPES.includes(p[0])) {
-        const nn = (v) => (v === "null" || !v ? null : v.trim());
+      const fields = line.trim().split("|").map((f) => f.trim());
+      const rawType = fields[0]?.toLowerCase().replace(/[\s-]+/g, "_");
+      if (fields.length >= 7 && TYPES.includes(rawType)) {
+        const nn = (v) => (!v || v.toLowerCase() === "null" ? null : v);
         parsed = {
-          type:       p[0],
-          title:      p[1]?.trim() || null,
-          trade:      nn(p[2]),
-          location:   nn(p[3]),
-          priority:   nn(p[4]),
-          due_date:   nn(p[5]),
-          start_date: nn(p[6]),
+          type:       rawType,
+          title:      fields[1] || null,
+          trade:      nn(fields[2]),
+          location:   nn(fields[3]),
+          priority:   nn(fields[4]),
+          due_date:   nn(fields[5]),
+          start_date: nn(fields[6]),
         };
         break;
       }
     }
-    if (!parsed.title) console.error("AI pipe parse failed. raw:", allText.slice(0, 400));
+
+    // Keyword fallback — guarantees a result even if Gemini ignores the format
+    if (!parsed?.title) {
+      console.error("Pipe parse failed, using fallback. raw:", allText.slice(0, 300));
+      const t = text.toLowerCase();
+      let type = "issue";
+      if (/schedul|pour|tomorrow|next\s+(week|month|mon|tue|wed|thu|fri)|delivery|inspection/.test(t)) type = "schedule";
+      else if (/today\s+we|had\s+\d+\s+guys?|finished|completed|daily/.test(t)) type = "daily_log";
+      parsed = {
+        type,
+        title: text.trim().split(/\s+/).slice(0, 8).join(" "),
+        trade: null, location: null, priority: null, due_date: null, start_date: null,
+      };
+    }
 
     res.json(parsed);
   } catch (e) {
