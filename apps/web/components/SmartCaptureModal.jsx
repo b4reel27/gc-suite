@@ -2,12 +2,9 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetch } from "../lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-
-function getToken() {
-  return typeof localStorage !== "undefined" ? localStorage.getItem("token") || "" : "";
-}
 
 const TYPE_META = {
   issue:     { label: "Field Issue",    icon: "⚠️",  short: "Issue" },
@@ -58,9 +55,8 @@ export default function SmartCaptureModal({ projectId, onClose }) {
     setError("");
     setResult(null);
     try {
-      const r = await fetch(`${API_BASE}/ai/parse`, {
+      const r = await apiFetch(`${API_BASE}/ai/parse`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ text }),
       });
       if (!r.ok) {
@@ -83,10 +79,9 @@ export default function SmartCaptureModal({ projectId, onClose }) {
     setSaving(true);
     setError("");
     try {
-      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` };
       if (result.type === "issue") {
-        const r = await fetch(`${API_BASE}/projects/${projectId}/punch`, {
-          method: "POST", headers,
+        const r = await apiFetch(`${API_BASE}/projects/${projectId}/punch`, {
+          method: "POST",
           body: JSON.stringify({
             title:    result.title,
             trade:    result.trade    || null,
@@ -98,8 +93,8 @@ export default function SmartCaptureModal({ projectId, onClose }) {
         router.push(`/projects/${projectId}/punch`);
       } else if (result.type === "schedule") {
         const date = result.start_date || result.due_date || new Date().toISOString().slice(0, 10);
-        const r = await fetch(`${API_BASE}/projects/${projectId}/schedule`, {
-          method: "POST", headers,
+        const r = await apiFetch(`${API_BASE}/projects/${projectId}/schedule`, {
+          method: "POST",
           body: JSON.stringify({
             title:      result.title,
             start_date: date,
