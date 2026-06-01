@@ -21,8 +21,8 @@ export default function RegisterPage() {
       setError("Passwords do not match");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
       return;
     }
 
@@ -39,10 +39,13 @@ export default function RegisterPage() {
 
       localStorage.setItem("token", data.token);
       if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
+      document.cookie = `gc_token=${data.token};path=/;max-age=86400;SameSite=Lax`;
 
       router.replace("/projects");
     } catch (err) {
-      setError(err.message || "Registration failed");
+      setError(err.message === "Failed to fetch"
+        ? "Cannot reach the server. Try again in a moment."
+        : err.message || "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -107,7 +110,7 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 type="password"
-                placeholder="Min 6 characters"
+                placeholder="Min 8 characters"
                 required
                 autoComplete="new-password"
                 className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-slate-500 focus:outline-none"

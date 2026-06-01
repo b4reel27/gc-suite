@@ -52,7 +52,10 @@ const pool = new Pool({
 
 /* MIDDLEWARE */
 
-app.use(cors());
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((s) => s.trim())
+  : true; // dev: allow all; set ALLOWED_ORIGINS=https://gc-suite.vercel.app in prod
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(helmet());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -231,9 +234,14 @@ async function logActivity(projectId, userName, action, type, title) {
 
 /* PUSH NOTIFICATIONS */
 
-const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY  || "BH4nhUz7PnQ6BftU4S_mHBOrCxQP3Xn3pUagbKnZNlKy-eDwTDXIG_Ee91fwVhpLM-7NOONbfx1WUSYx-QD8QrQ";
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "EhUTanTTnfRcAr6_SCuRTdzvBQSKse8Un1VgiD6CUrc";
-webpush.setVapidDetails("mailto:admin@gc-suite.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY  || "";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
+if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+  console.warn("VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY not set — push notifications disabled");
+}
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails("mailto:admin@gc-suite.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 /* EMAIL */
 
@@ -271,6 +279,7 @@ async function notifyCompanyMembers(projectId, companyId, subject, text) {
 }
 
 async function sendPushToUser(userId, title, body, url = "/dashboard") {
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) return;
   try {
     const { rows } = await pool.query(
       `SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1`, [userId]
@@ -489,6 +498,12 @@ async function sendPushToUser(userId, title, body, url = "/dashboard") {
     EXCEPTION WHEN OTHERS THEN NULL;
     END $$;
   `).catch(() => {});
+
+  // Performance indexes on core tables (safe if they already exist)
+  await pool.query(`CREATE INDEX IF NOT EXISTS issues_project_id_idx ON issues(project_id)`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS issues_status_idx ON issues(status)`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS schedule_items_project_id_idx ON schedule_items(project_id)`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS project_activity_project_id_idx ON project_activity(project_id)`).catch(() => {});
 })().catch((e) => {
   console.error("Startup error:", e);
   process.exit(1);

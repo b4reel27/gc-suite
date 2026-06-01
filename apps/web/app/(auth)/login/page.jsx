@@ -27,21 +27,17 @@ function LoginInner() {
       });
 
       const data = await res.json();
-
       if (!res.ok) throw new Error(data?.error || "Login failed");
 
       localStorage.setItem("token", data.token);
       if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
-      // Also set cookie so server components (Plans page) can read the token
       document.cookie = `gc_token=${data.token};path=/;max-age=86400;SameSite=Lax`;
 
       router.replace(next);
     } catch (err) {
-      if (err.message === "Failed to fetch") {
-        setError("Cannot reach the server. Please try again.");
-      } else {
-        setError(err.message || "Login failed");
-      }
+      setError(err.message === "Failed to fetch"
+        ? "Cannot reach the server. Please try again."
+        : err.message || "Login failed");
     } finally {
       setLoading(false);
     }

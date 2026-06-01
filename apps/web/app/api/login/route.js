@@ -4,7 +4,7 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const email = String(body?.email || "").trim();
-    const password = String(body?.password || "");
+    const password = String(body?.password || "").trim();
 
     if (!email) return NextResponse.json({ error: "Email is required" }, { status: 400 });
     if (!password) return NextResponse.json({ error: "Password is required" }, { status: 400 });
