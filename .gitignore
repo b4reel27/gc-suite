@@ -20,6 +20,7 @@ yarn-error.log*
 # Next build output
 apps/web/.next/
 apps/web/node_modules/
+apps/web/tsconfig.tsbuildinfo
 
 # API runtime files
 apps/api/node_modules/
