@@ -130,6 +130,9 @@ export default function ChangeOrdersPage() {
   // Status action busy
   const [statusBusy, setStatusBusy] = useState({});
 
+  // Inline delete confirmation
+  const [deleteConfirm, setDeleteConfirm] = useState({});
+
   const apiBase = useMemo(() => getApiBase(), []);
 
   async function apiFetch(path, opts = {}) {
@@ -305,7 +308,11 @@ export default function ChangeOrdersPage() {
   }
 
   async function deletePco(id) {
-    if (!window.confirm("Delete this change event? This cannot be undone.")) return;
+    if (!deleteConfirm[id]) {
+      setDeleteConfirm((prev) => ({ ...prev, [id]: true }));
+      return;
+    }
+    setDeleteConfirm((prev) => ({ ...prev, [id]: false }));
     setError("");
     try {
       await apiFetch(`/change-event/${id}`, { method: "DELETE" });
@@ -317,7 +324,11 @@ export default function ChangeOrdersPage() {
   }
 
   async function deleteCo(id) {
-    if (!window.confirm("Delete this change order? This cannot be undone.")) return;
+    if (!deleteConfirm[id]) {
+      setDeleteConfirm((prev) => ({ ...prev, [id]: true }));
+      return;
+    }
+    setDeleteConfirm((prev) => ({ ...prev, [id]: false }));
     setError("");
     try {
       await apiFetch(`/change-order/${id}`, { method: "DELETE" });
@@ -327,6 +338,31 @@ export default function ChangeOrdersPage() {
       setError(e?.message || "Error deleting change order");
     }
   }
+
+  async function updateCoStatus(id, status) {
+    setStatusBusy((prev) => ({ ...prev, [id]: true }));
+    setError("");
+    try {
+      await apiFetch(`/change-order/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      await loadCos();
+    } catch (e) {
+      setError(e?.message || "Error updating status");
+    } finally {
+      setStatusBusy((prev) => ({ ...prev, [id]: false }));
+    }
+  }
+
+  const statusCoLabels = {
+    PENDING_OWNER: "Pending Owner",
+    EXECUTED: "Executed",
+    REJECTED: "Rejected",
+    VOID: "Void",
+    DRAFT: "Draft",
+  };
 
   return (
     <div className="space-y-4">
@@ -566,13 +602,33 @@ export default function ChangeOrdersPage() {
                               Reject
                             </button>
                           ) : null}
-                          <button
-                            type="button"
-                            onClick={() => deletePco(pco.id)}
-                            className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
-                          >
-                            Delete
-                          </button>
+                          {deleteConfirm[pco.id] ? (
+                            <>
+                              <span className="text-sm text-slate-600">Are you sure?</span>
+                              <button
+                                type="button"
+                                onClick={() => deletePco(pco.id)}
+                                className="inline-flex items-center rounded-2xl border border-red-300 bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                              >
+                                Yes, Delete
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteConfirm((prev) => ({ ...prev, [pco.id]: false }))}
+                                className="inline-flex items-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => deletePco(pco.id)}
+                              className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </div>
                     ) : null}
@@ -732,13 +788,73 @@ export default function ChangeOrdersPage() {
                         )}
 
                         <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => deleteCo(co.id)}
-                            className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
-                          >
-                            Delete
-                          </button>
+                          {status === "DRAFT" ? (
+                            <button
+                              type="button"
+                              disabled={!!statusBusy[co.id]}
+                              onClick={() => updateCoStatus(co.id, "PENDING_OWNER")}
+                              className="inline-flex items-center rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+                            >
+                              Submit to Owner
+                            </button>
+                          ) : null}
+                          {status === "PENDING_OWNER" ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled={!!statusBusy[co.id]}
+                                onClick={() => updateCoStatus(co.id, "EXECUTED")}
+                                className="inline-flex items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                              >
+                                Mark Executed
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!!statusBusy[co.id]}
+                                onClick={() => updateCoStatus(co.id, "REJECTED")}
+                                className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          ) : null}
+                          {(status === "EXECUTED" || status === "REJECTED") ? (
+                            <button
+                              type="button"
+                              disabled={!!statusBusy[co.id]}
+                              onClick={() => updateCoStatus(co.id, "VOID")}
+                              className="inline-flex items-center rounded-2xl border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-200 disabled:opacity-50"
+                            >
+                              Void
+                            </button>
+                          ) : null}
+                          {deleteConfirm[co.id] ? (
+                            <>
+                              <span className="text-sm text-slate-600">Are you sure?</span>
+                              <button
+                                type="button"
+                                onClick={() => deleteCo(co.id)}
+                                className="inline-flex items-center rounded-2xl border border-red-300 bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                              >
+                                Yes, Delete
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteConfirm((prev) => ({ ...prev, [co.id]: false }))}
+                                className="inline-flex items-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => deleteCo(co.id)}
+                              className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </div>
                     ) : null}

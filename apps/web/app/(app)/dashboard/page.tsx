@@ -109,7 +109,7 @@ function useWeather() {
 }
 
 function isOpenIssue(status?: string) {
-  return ["OPEN", "IN_PROGRESS", "DONE"].includes(statusUpper(status));
+  return ["OPEN", "IN_PROGRESS"].includes(statusUpper(status));
 }
 
 function statusPillClass(status?: string) {

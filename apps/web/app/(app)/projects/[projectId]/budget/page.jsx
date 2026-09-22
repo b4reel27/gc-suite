@@ -221,6 +221,7 @@ export default function BudgetPage() {
         description: item.description || "",
         category: item.category || "General",
         original_amount: item.original_amount ?? "",
+        approved_co_amount: item.approved_co_amount ?? 0,
         committed_amount: item.committed_amount ?? "",
         actual_cost: item.actual_cost ?? "",
       },
@@ -245,6 +246,7 @@ export default function BudgetPage() {
         description: form.description,
         category: form.category,
         original_amount: Number(form.original_amount) || 0,
+        approved_co_amount: Number(form.approved_co_amount) || 0,
         committed_amount: Number(form.committed_amount) || 0,
         actual_cost: Number(form.actual_cost) || 0,
       };
