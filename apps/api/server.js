@@ -24,6 +24,16 @@ import nodemailer from "nodemailer";
 
 dotenv.config();
 
+// Configure Cloudinary from CLOUDINARY_URL env var (format: cloudinary://key:secret@cloud)
+if (process.env.CLOUDINARY_URL) {
+  const url = new URL(process.env.CLOUDINARY_URL);
+  cloudinary.config({
+    cloud_name: url.hostname,
+    api_key: url.username,
+    api_secret: url.password,
+  });
+}
+
 const app = express();
 
 /* CONFIG */
