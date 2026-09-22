@@ -18,6 +18,7 @@ import {
   supersedeRevision,
 } from "./plansStore.js";
 
+import { v2 as cloudinary } from "cloudinary";
 import webpush from "web-push";
 import nodemailer from "nodemailer";
 
@@ -2062,36 +2063,103 @@ app.delete("/jsa/:jsaId", requireAuth, async (req, res) => {
 
 /* PLANS */
 
+// Upload a buffer to Cloudinary (PDFs use resource_type raw)
+function uploadToCloudinary(buffer, opts = {}) {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader
+      .upload_stream({ resource_type: "raw", folder: "gc-suite/plans", ...opts }, (err, result) => {
+        if (err) reject(err);
+        else resolve(result);
+      })
+      .end(buffer);
+  });
+}
+
+// Shape a plan_revisions row for API responses
+function fmtRevision(rv) {
+  return { rev: rv.rev, date: rv.rev_date, status: rv.status, fileUrl: rv.file_url };
+}
+
 app.get("/projects/:projectId/plans", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
     if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
-
     await requireProjectMember(projectId, req.userId);
 
-    const store = await readPlans(projectId);
-    const sheets = filterSheets(store, req.query);
+    const { q, discipline } = req.query;
+    const params = [projectId];
+    let where = "ps.project_id = $1";
+    if (discipline) { params.push(discipline); where += ` AND ps.discipline = $${params.length}`; }
+    if (q) { params.push(`%${q}%`); const p = params.length; where += ` AND (ps.sheet_no ILIKE $${p} OR ps.title ILIKE $${p})`; }
+
+    const { rows } = await pool.query(
+      `SELECT ps.id, ps.sheet_id, ps.sheet_no, ps.title, ps.discipline,
+              COALESCE(json_agg(pr ORDER BY pr.created_at ASC) FILTER (WHERE pr.id IS NOT NULL), '[]') AS revisions
+       FROM plan_sheets ps
+       LEFT JOIN plan_revisions pr ON pr.sheet_uuid = ps.id
+       WHERE ${where}
+       GROUP BY ps.id
+       ORDER BY ps.sheet_no ASC`,
+      params
+    );
+    const sheets = rows.map((r) => ({
+      sheetId: r.sheet_id, sheetNo: r.sheet_no, title: r.title, discipline: r.discipline,
+      revisions: r.revisions.map(fmtRevision),
+    }));
     res.json({ sheets });
-  } catch (e) {
-    console.error(e);
-    return handleThrownAccessError(res, e);
-  }
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.get("/projects/:projectId/plans/sheets/:sheetId", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+
+    const { rows } = await pool.query(
+      `SELECT ps.id, ps.sheet_id, ps.sheet_no, ps.title, ps.discipline,
+              COALESCE(json_agg(pr ORDER BY pr.created_at ASC) FILTER (WHERE pr.id IS NOT NULL), '[]') AS revisions
+       FROM plan_sheets ps
+       LEFT JOIN plan_revisions pr ON pr.sheet_uuid = ps.id
+       WHERE ps.project_id = $1 AND ps.sheet_id = $2
+       GROUP BY ps.id`,
+      [projectId, decodeURIComponent(sheetId)]
+    );
+    if (!rows.length) return apiError(res, 404, "Sheet not found");
+    const r = rows[0];
+    res.json({
+      sheetId: r.sheet_id, sheetNo: r.sheet_no, title: r.title, discipline: r.discipline,
+      revisions: r.revisions.map(fmtRevision),
+    });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
 
 app.post("/projects/:projectId/plans", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
     if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
-
     const membership = await requireProjectMember(projectId, req.userId);
-    if (!isGcRole(membership.role)) {
-      return apiError(res, 403, "Only GC users can upload plans");
+    if (!isGcRole(membership.role)) return apiError(res, 403, "Only GC users can upload plans");
+
+    const { sheetId, sheetNo, title, discipline, rev, revDate, fileUrl, status } = req.body;
+    if (!sheetNo || !title) return apiError(res, 400, "sheetNo and title are required");
+    const sid = sheetId?.trim() || sheetNo.trim();
+
+    const { rows } = await pool.query(
+      `INSERT INTO plan_sheets (project_id, sheet_id, sheet_no, title, discipline)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (project_id, sheet_id) DO UPDATE SET sheet_no=$3, title=$4, discipline=$5
+       RETURNING id`,
+      [projectId, sid, sheetNo.trim(), title.trim(), (discipline || "").trim()]
+    );
+    if (rev !== undefined && fileUrl) {
+      await pool.query(
+        `INSERT INTO plan_revisions (sheet_uuid, rev, rev_date, status, file_url)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (sheet_uuid, rev) DO UPDATE SET status=$4, file_url=$5`,
+        [rows[0].id, String(rev), revDate || null, status || "Pending", fileUrl]
+      );
     }
-
-    const store = await readPlans(projectId);
-    const updated = upsertSheetAndRevision(store, req.body);
-    await writePlans(projectId, updated);
-
     res.status(201).json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -2104,65 +2172,38 @@ app.post("/projects/:projectId/plans/:sheetId/approve", requireAuth, async (req,
   try {
     const { projectId, sheetId } = req.params;
     if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
-
     const membership = await requireProjectMember(projectId, req.userId);
-    if (!isGcRole(membership.role)) {
-      return apiError(res, 403, "Only GC users can approve plans");
-    }
-
+    if (!isGcRole(membership.role)) return apiError(res, 403, "Only GC users can approve plans");
     const { rev } = req.body;
     if (rev === undefined) return apiError(res, 400, "rev is required");
 
-    const store = await readPlans(projectId);
-    const updated = approveRevision(store, sheetId, rev);
-    await writePlans(projectId, updated);
-
+    const { rows } = await pool.query(
+      `SELECT id FROM plan_sheets WHERE project_id=$1 AND sheet_id=$2`, [projectId, sheetId]
+    );
+    if (!rows.length) return apiError(res, 404, "Sheet not found");
+    const uuid = rows[0].id;
+    await pool.query(`UPDATE plan_revisions SET status='Superseded' WHERE sheet_uuid=$1 AND status='Current'`, [uuid]);
+    await pool.query(`UPDATE plan_revisions SET status='Current' WHERE sheet_uuid=$1 AND rev=$2`, [uuid, String(rev)]);
     res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    if (e.status === 404) return apiError(res, 404, e.message);
-    return handleThrownAccessError(res, e);
-  }
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
 
 app.post("/projects/:projectId/plans/:sheetId/supersede", requireAuth, async (req, res) => {
   try {
     const { projectId, sheetId } = req.params;
     if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
-
     const membership = await requireProjectMember(projectId, req.userId);
-    if (!isGcRole(membership.role)) {
-      return apiError(res, 403, "Only GC users can manage plans");
-    }
-
+    if (!isGcRole(membership.role)) return apiError(res, 403, "Only GC users can manage plans");
     const { rev } = req.body;
     if (rev === undefined) return apiError(res, 400, "rev is required");
 
-    const store = await readPlans(projectId);
-    const updated = supersedeRevision(store, sheetId, rev);
-    await writePlans(projectId, updated);
-
+    const { rows } = await pool.query(
+      `SELECT id FROM plan_sheets WHERE project_id=$1 AND sheet_id=$2`, [projectId, sheetId]
+    );
+    if (!rows.length) return apiError(res, 404, "Sheet not found");
+    await pool.query(`UPDATE plan_revisions SET status='Superseded' WHERE sheet_uuid=$1 AND rev=$2`, [rows[0].id, String(rev)]);
     res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    if (e.status === 404) return apiError(res, 404, e.message);
-    return handleThrownAccessError(res, e);
-  }
-});
-
-app.get("/projects/:projectId/plans/sheets/:sheetId", requireAuth, async (req, res) => {
-  try {
-    const { projectId, sheetId } = req.params;
-    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
-    await requireProjectMember(projectId, req.userId);
-    const store = await readPlans(projectId);
-    const sheet = (store.sheets || []).find((s) => s.sheetId === decodeURIComponent(sheetId));
-    if (!sheet) return apiError(res, 404, "Sheet not found");
-    res.json(sheet);
-  } catch (e) {
-    console.error(e);
-    return handleThrownAccessError(res, e);
-  }
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
 
 app.post(
@@ -2173,46 +2214,52 @@ app.post(
     try {
       const { projectId } = req.params;
       if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
-
       const membership = await requireProjectMember(projectId, req.userId);
-      if (!isGcRole(membership.role)) {
-        return apiError(res, 403, "Only GC users can upload plans");
-      }
+      if (!isGcRole(membership.role)) return apiError(res, 403, "Only GC users can upload plans");
+      if (!req.file) return apiError(res, 400, "No PDF uploaded");
 
-      if (!req.file) {
-        return apiError(res, 400, "No PDF uploaded");
-      }
+      const { sheetNo, sheetId: rawSheetId, title, discipline, makeCurrent, rev, revDate } = req.body;
+      if (!sheetNo || !title || !discipline) return apiError(res, 400, "sheetNo, title, and discipline are required");
 
-      const { sheetNo, sheetId: rawSheetId, title, discipline, makeCurrent, rev, revDate } =
-        req.body;
-
-      if (!sheetNo || !title || !discipline) {
-        return apiError(res, 400, "sheetNo, title, and discipline are required");
-      }
-
-      // rename uploaded file to .pdf
-      const ext = ".pdf";
-      const newFilename = `${req.file.filename}${ext}`;
-      const oldPath = req.file.path;
-      const newPath = path.join(UPLOAD_ROOT, newFilename);
-      await fs.rename(oldPath, newPath);
-
-      const fileUrl = `/uploads/${newFilename}`;
       const sheetId = rawSheetId?.trim() || sheetNo.trim();
-      const status = makeCurrent === "true" ? "CURRENT" : "PENDING";
+      const status = makeCurrent === "true" ? "Current" : "Pending";
+      const revNum = rev?.trim() || "1";
+      const revDateVal = revDate?.trim() || new Date().toISOString().slice(0, 10);
 
-      const store = await readPlans(projectId);
-      const updated = upsertSheetAndRevision(store, {
-        sheetId,
-        sheetNo: sheetNo.trim(),
-        title: title.trim(),
-        discipline: discipline.trim(),
-        rev: rev?.trim() || "1",
-        revDate: revDate?.trim() || new Date().toISOString().slice(0, 10),
-        fileUrl,
-        status,
+      // Upload PDF to Cloudinary (persistent storage)
+      const fileBuffer = await fs.readFile(req.file.path);
+      const cloudResult = await uploadToCloudinary(fileBuffer, {
+        public_id: `${projectId}/${sheetId}_rev${revNum}_${Date.now()}`,
+        format: "pdf",
       });
-      await writePlans(projectId, updated);
+      await fs.unlink(req.file.path).catch(() => {});
+      const fileUrl = cloudResult.secure_url;
+
+      // Upsert sheet record
+      const { rows } = await pool.query(
+        `INSERT INTO plan_sheets (project_id, sheet_id, sheet_no, title, discipline)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (project_id, sheet_id) DO UPDATE SET sheet_no=$3, title=$4, discipline=$5
+         RETURNING id`,
+        [projectId, sheetId, sheetNo.trim(), title.trim(), discipline.trim()]
+      );
+      const sheetUuid = rows[0].id;
+
+      // Supersede existing current revisions if this is the new current
+      if (status === "Current") {
+        await pool.query(
+          `UPDATE plan_revisions SET status='Superseded' WHERE sheet_uuid=$1 AND status='Current'`,
+          [sheetUuid]
+        );
+      }
+
+      // Insert (or replace) this revision
+      await pool.query(
+        `INSERT INTO plan_revisions (sheet_uuid, rev, rev_date, status, file_url)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (sheet_uuid, rev) DO UPDATE SET status=$4, file_url=$5`,
+        [sheetUuid, revNum, revDateVal, status, fileUrl]
+      );
 
       res.json({ ok: true, sheet: { sheetId, sheetNo, title, discipline, fileUrl } });
     } catch (e) {
@@ -2438,6 +2485,28 @@ async function ensureNewTables() {
     description TEXT NOT NULL DEFAULT '',
     photo_url TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS plan_sheets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    sheet_id TEXT NOT NULL,
+    sheet_no TEXT NOT NULL,
+    title TEXT NOT NULL,
+    discipline TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(project_id, sheet_id)
+  )`).catch(() => {});
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS plan_revisions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sheet_uuid UUID NOT NULL REFERENCES plan_sheets(id) ON DELETE CASCADE,
+    rev TEXT NOT NULL,
+    rev_date DATE,
+    status TEXT NOT NULL DEFAULT 'Pending',
+    file_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(sheet_uuid, rev)
   )`).catch(() => {});
 }
 
