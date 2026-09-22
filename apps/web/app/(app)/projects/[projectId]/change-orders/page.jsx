@@ -516,127 +516,168 @@ export default function ChangeOrdersPage() {
             ) : null}
           </div>
 
-          {/* PCO list */}
-          {pcos.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
-              No change events yet. Create one above.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pcos.map((pco) => {
-                const isExpanded = expandedPco === pco.id;
-                const status = String(pco.status || "DRAFT").toUpperCase();
+          {/* PCO list — mobile cards */}
+          <div className="md:hidden">
+            {pcos.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
+                No change events yet. Create one above.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pcos.map((pco) => {
+                  const isExpanded = expandedPco === pco.id;
+                  const status = String(pco.status || "DRAFT").toUpperCase();
 
-                return (
-                  <div key={pco.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <button
-                      type="button"
-                      className="w-full p-4 text-left"
-                      onClick={() => setExpandedPco(isExpanded ? null : pco.id)}
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {pco.number ? (
-                              <span className="text-xs font-mono font-semibold text-slate-500">
-                                PCO-{pco.number}
+                  return (
+                    <div key={pco.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <button
+                        type="button"
+                        className="w-full p-4 text-left"
+                        onClick={() => setExpandedPco(isExpanded ? null : pco.id)}
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {pco.number ? (
+                                <span className="text-xs font-mono font-semibold text-slate-500">
+                                  PCO-{pco.number}
+                                </span>
+                              ) : null}
+                              <span className="font-semibold text-slate-900">{pco.title || "Untitled"}</span>
+                              <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${pcoBadgeClass(status)}`}>
+                                {status}
                               </span>
-                            ) : null}
-                            <span className="font-semibold text-slate-900">{pco.title || "Untitled"}</span>
-                            <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${pcoBadgeClass(status)}`}>
-                              {status}
-                            </span>
-                            {pco.reason ? (
-                              <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600">
-                                {reasonLabel(pco.reason)}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
-                            <span>
-                              Impact:{" "}
-                              <span className="font-semibold text-slate-900">
-                                {fmtDollars(pco.potential_impact)}
-                              </span>
-                            </span>
-                            {pco.days_impact ? (
+                              {pco.reason ? (
+                                <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600">
+                                  {reasonLabel(pco.reason)}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
                               <span>
-                                Days:{" "}
-                                <span className="font-semibold text-slate-900">{pco.days_impact}</span>
+                                Impact:{" "}
+                                <span className="font-semibold text-slate-900">
+                                  {fmtDollars(pco.potential_impact)}
+                                </span>
                               </span>
-                            ) : null}
+                              {pco.days_impact ? (
+                                <span>
+                                  Days:{" "}
+                                  <span className="font-semibold text-slate-900">{pco.days_impact}</span>
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="text-xs text-slate-400 sm:shrink-0">
+                            {isExpanded ? "▲ Collapse" : "▼ Expand"}
                           </div>
                         </div>
-                        <div className="text-xs text-slate-400 sm:shrink-0">
-                          {isExpanded ? "▲ Collapse" : "▼ Expand"}
-                        </div>
-                      </div>
-                    </button>
+                      </button>
 
-                    {isExpanded ? (
-                      <div className="border-t border-slate-100 px-4 pb-4 pt-3">
-                        {pco.description ? (
-                          <p className="mb-4 text-sm text-slate-700 whitespace-pre-line">{pco.description}</p>
-                        ) : (
-                          <p className="mb-4 text-sm text-slate-400 italic">No description provided.</p>
-                        )}
+                      {isExpanded ? (
+                        <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+                          {pco.description ? (
+                            <p className="mb-4 text-sm text-slate-700 whitespace-pre-line">{pco.description}</p>
+                          ) : (
+                            <p className="mb-4 text-sm text-slate-400 italic">No description provided.</p>
+                          )}
 
-                        <div className="flex flex-wrap items-center gap-2">
-                          {status !== "APPROVED" && status !== "VOID" ? (
-                            <button
-                              type="button"
-                              disabled={!!statusBusy[pco.id]}
-                              onClick={() => updatePcoStatus(pco.id, "APPROVED")}
-                              className="inline-flex items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
-                            >
-                              Approve
-                            </button>
-                          ) : null}
-                          {status !== "REJECTED" && status !== "VOID" ? (
-                            <button
-                              type="button"
-                              disabled={!!statusBusy[pco.id]}
-                              onClick={() => updatePcoStatus(pco.id, "REJECTED")}
-                              className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
-                            >
-                              Reject
-                            </button>
-                          ) : null}
-                          {deleteConfirm[pco.id] ? (
-                            <>
-                              <span className="text-sm text-slate-600">Are you sure?</span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {status !== "APPROVED" && status !== "VOID" ? (
+                              <button
+                                type="button"
+                                disabled={!!statusBusy[pco.id]}
+                                onClick={() => updatePcoStatus(pco.id, "APPROVED")}
+                                className="inline-flex items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                              >
+                                Approve
+                              </button>
+                            ) : null}
+                            {status !== "REJECTED" && status !== "VOID" ? (
+                              <button
+                                type="button"
+                                disabled={!!statusBusy[pco.id]}
+                                onClick={() => updatePcoStatus(pco.id, "REJECTED")}
+                                className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                            ) : null}
+                            {deleteConfirm[pco.id] ? (
+                              <>
+                                <span className="text-sm text-slate-600">Are you sure?</span>
+                                <button
+                                  type="button"
+                                  onClick={() => deletePco(pco.id)}
+                                  className="inline-flex items-center rounded-2xl border border-red-300 bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                                >
+                                  Yes, Delete
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirm((prev) => ({ ...prev, [pco.id]: false }))}
+                                  className="inline-flex items-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
                               <button
                                 type="button"
                                 onClick={() => deletePco(pco.id)}
-                                className="inline-flex items-center rounded-2xl border border-red-300 bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                                className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
                               >
-                                Yes, Delete
+                                Delete
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteConfirm((prev) => ({ ...prev, [pco.id]: false }))}
-                                className="inline-flex items-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => deletePco(pco.id)}
-                              className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
-                            >
-                              Delete
-                            </button>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* PCO list — desktop table */}
+          <div className="hidden md:block">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    {["#", "Title", "Reason", "Impact", "Days", "Status", ""].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {pcos.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">No change events yet.</td></tr>
+                  ) : pcos.map((pco) => (
+                    <tr key={pco.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{pco.number ? `PCO-${pco.number}` : "—"}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">{pco.title || "Untitled"}</td>
+                      <td className="px-4 py-3 text-slate-600">{reasonLabel(pco.reason)}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{fmtDollars(pco.potential_impact)}</td>
+                      <td className="px-4 py-3 text-slate-700">{pco.days_impact || 0}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${pcoBadgeClass(pco.status)}`}>{pco.status}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          {pco.status === "DRAFT" && <button type="button" onClick={() => updatePcoStatus(pco.id, "PENDING")} disabled={!!statusBusy[pco.id]} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50">Submit</button>}
+                          {pco.status === "PENDING" && <button type="button" onClick={() => updatePcoStatus(pco.id, "APPROVED")} disabled={!!statusBusy[pco.id]} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">Approve</button>}
+                          {pco.status === "PENDING" && <button type="button" onClick={() => updatePcoStatus(pco.id, "REJECTED")} disabled={!!statusBusy[pco.id]} className="rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50">Reject</button>}
+                          <button type="button" onClick={() => deletePco(pco.id)} className="rounded-lg border border-red-100 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100">Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
         </div>
       ) : null}
 
@@ -729,140 +770,183 @@ export default function ChangeOrdersPage() {
             ) : null}
           </div>
 
-          {/* CO list */}
-          {cos.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
-              No change orders yet. Create one above.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {cos.map((co) => {
-                const isExpanded = expandedCo === co.id;
-                const status = String(co.status || "DRAFT").toUpperCase();
+          {/* CO list — mobile cards */}
+          <div className="md:hidden">
+            {cos.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
+                No change orders yet. Create one above.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {cos.map((co) => {
+                  const isExpanded = expandedCo === co.id;
+                  const status = String(co.status || "DRAFT").toUpperCase();
 
-                return (
-                  <div key={co.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <button
-                      type="button"
-                      className="w-full p-4 text-left"
-                      onClick={() => setExpandedCo(isExpanded ? null : co.id)}
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {co.number ? (
-                              <span className="text-xs font-mono font-semibold text-slate-500">
-                                CO-{co.number}
+                  return (
+                    <div key={co.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <button
+                        type="button"
+                        className="w-full p-4 text-left"
+                        onClick={() => setExpandedCo(isExpanded ? null : co.id)}
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {co.number ? (
+                                <span className="text-xs font-mono font-semibold text-slate-500">
+                                  CO-{co.number}
+                                </span>
+                              ) : null}
+                              <span className="font-semibold text-slate-900">{co.title || "Untitled"}</span>
+                              <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${coBadgeClass(status)}`}>
+                                {coPrettyStatus(status)}
                               </span>
-                            ) : null}
-                            <span className="font-semibold text-slate-900">{co.title || "Untitled"}</span>
-                            <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${coBadgeClass(status)}`}>
-                              {coPrettyStatus(status)}
-                            </span>
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
-                            <span>
-                              Amount:{" "}
-                              <span className="font-semibold text-slate-900">{fmtDollars(co.amount)}</span>
-                            </span>
-                            {co.days_impact ? (
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
                               <span>
-                                Days:{" "}
-                                <span className="font-semibold text-slate-900">{co.days_impact}</span>
+                                Amount:{" "}
+                                <span className="font-semibold text-slate-900">{fmtDollars(co.amount)}</span>
                               </span>
-                            ) : null}
+                              {co.days_impact ? (
+                                <span>
+                                  Days:{" "}
+                                  <span className="font-semibold text-slate-900">{co.days_impact}</span>
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="text-xs text-slate-400 sm:shrink-0">
+                            {isExpanded ? "▲ Collapse" : "▼ Expand"}
                           </div>
                         </div>
-                        <div className="text-xs text-slate-400 sm:shrink-0">
-                          {isExpanded ? "▲ Collapse" : "▼ Expand"}
-                        </div>
-                      </div>
-                    </button>
+                      </button>
 
-                    {isExpanded ? (
-                      <div className="border-t border-slate-100 px-4 pb-4 pt-3">
-                        {co.description ? (
-                          <p className="mb-4 text-sm text-slate-700 whitespace-pre-line">{co.description}</p>
-                        ) : (
-                          <p className="mb-4 text-sm text-slate-400 italic">No description provided.</p>
-                        )}
+                      {isExpanded ? (
+                        <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+                          {co.description ? (
+                            <p className="mb-4 text-sm text-slate-700 whitespace-pre-line">{co.description}</p>
+                          ) : (
+                            <p className="mb-4 text-sm text-slate-400 italic">No description provided.</p>
+                          )}
 
-                        <div className="flex flex-wrap items-center gap-2">
-                          {status === "DRAFT" ? (
-                            <button
-                              type="button"
-                              disabled={!!statusBusy[co.id]}
-                              onClick={() => updateCoStatus(co.id, "PENDING_OWNER")}
-                              className="inline-flex items-center rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
-                            >
-                              Submit to Owner
-                            </button>
-                          ) : null}
-                          {status === "PENDING_OWNER" ? (
-                            <>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {status === "DRAFT" ? (
                               <button
                                 type="button"
                                 disabled={!!statusBusy[co.id]}
-                                onClick={() => updateCoStatus(co.id, "EXECUTED")}
-                                className="inline-flex items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                                onClick={() => updateCoStatus(co.id, "PENDING_OWNER")}
+                                className="inline-flex items-center rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
                               >
-                                Mark Executed
+                                Submit to Owner
                               </button>
+                            ) : null}
+                            {status === "PENDING_OWNER" ? (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={!!statusBusy[co.id]}
+                                  onClick={() => updateCoStatus(co.id, "EXECUTED")}
+                                  className="inline-flex items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                                >
+                                  Mark Executed
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={!!statusBusy[co.id]}
+                                  onClick={() => updateCoStatus(co.id, "REJECTED")}
+                                  className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            ) : null}
+                            {(status === "EXECUTED" || status === "REJECTED") ? (
                               <button
                                 type="button"
                                 disabled={!!statusBusy[co.id]}
-                                onClick={() => updateCoStatus(co.id, "REJECTED")}
-                                className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                                onClick={() => updateCoStatus(co.id, "VOID")}
+                                className="inline-flex items-center rounded-2xl border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-200 disabled:opacity-50"
                               >
-                                Reject
+                                Void
                               </button>
-                            </>
-                          ) : null}
-                          {(status === "EXECUTED" || status === "REJECTED") ? (
-                            <button
-                              type="button"
-                              disabled={!!statusBusy[co.id]}
-                              onClick={() => updateCoStatus(co.id, "VOID")}
-                              className="inline-flex items-center rounded-2xl border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-200 disabled:opacity-50"
-                            >
-                              Void
-                            </button>
-                          ) : null}
-                          {deleteConfirm[co.id] ? (
-                            <>
-                              <span className="text-sm text-slate-600">Are you sure?</span>
+                            ) : null}
+                            {deleteConfirm[co.id] ? (
+                              <>
+                                <span className="text-sm text-slate-600">Are you sure?</span>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteCo(co.id)}
+                                  className="inline-flex items-center rounded-2xl border border-red-300 bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                                >
+                                  Yes, Delete
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirm((prev) => ({ ...prev, [co.id]: false }))}
+                                  className="inline-flex items-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
                               <button
                                 type="button"
                                 onClick={() => deleteCo(co.id)}
-                                className="inline-flex items-center rounded-2xl border border-red-300 bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                                className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
                               >
-                                Yes, Delete
+                                Delete
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteConfirm((prev) => ({ ...prev, [co.id]: false }))}
-                                className="inline-flex items-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => deleteCo(co.id)}
-                              className="inline-flex items-center rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
-                            >
-                              Delete
-                            </button>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* CO list — desktop table */}
+          <div className="hidden md:block">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    {["#", "Title", "Amount", "Days", "Status", ""].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {cos.length === 0 ? (
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">No change orders yet.</td></tr>
+                  ) : cos.map((co) => {
+                    const status = String(co.status || "DRAFT").toUpperCase();
+                    return (
+                      <tr key={co.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-mono text-xs text-slate-500">{co.number ? `CO-${co.number}` : "—"}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900">{co.title || "Untitled"}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">{fmtDollars(co.amount)}</td>
+                        <td className="px-4 py-3 text-slate-700">{co.days_impact || 0}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${coBadgeClass(status)}`}>{coPrettyStatus(status)}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2">
+                            {status === "DRAFT" && <button type="button" onClick={() => updateCoStatus(co.id, "PENDING_OWNER")} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100">Submit</button>}
+                            {status === "PENDING_OWNER" && <button type="button" onClick={() => updateCoStatus(co.id, "EXECUTED")} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">Execute</button>}
+                            {status === "PENDING_OWNER" && <button type="button" onClick={() => updateCoStatus(co.id, "REJECTED")} className="rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100">Reject</button>}
+                            <button type="button" onClick={() => deleteCo(co.id)} className="rounded-lg border border-red-100 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100">Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
+          </div>
         </div>
       ) : null}
     </div>

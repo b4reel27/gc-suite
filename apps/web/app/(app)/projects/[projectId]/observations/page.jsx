@@ -532,140 +532,186 @@ export default function ObservationsPage() {
         </div>
       </Card>
 
-      {/* Observation list */}
-      {loading ? (
-        <Card className="text-sm text-slate-500">Loading observations...</Card>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((obs) => {
-            const type = String(obs.obs_type || obs.type || "GENERAL").toUpperCase();
-            const status = String(obs.status || "OPEN").toUpperCase();
-            const priority = obs.priority || "Medium";
-            const isOpen = status === "OPEN";
-            const isExpanded = expandedId === obs.id;
-            const isBusy = busyId === obs.id;
+      {/* Observation list — mobile cards */}
+      <div className="md:hidden">
+        {loading ? (
+          <Card className="text-sm text-slate-500">Loading observations...</Card>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((obs) => {
+              const type = String(obs.obs_type || obs.type || "GENERAL").toUpperCase();
+              const status = String(obs.status || "OPEN").toUpperCase();
+              const priority = obs.priority || "Medium";
+              const isOpen = status === "OPEN";
+              const isExpanded = expandedId === obs.id;
+              const isBusy = busyId === obs.id;
 
-            const createdAt = obs.created_at
-              ? new Date(obs.created_at).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })
-              : "";
+              const createdAt = obs.created_at
+                ? new Date(obs.created_at).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : "";
 
-            return (
-              <Card key={obs.id} className="cursor-pointer transition-shadow hover:shadow-md">
-                {/* Card header — click to expand */}
-                <button
-                  type="button"
-                  onClick={() => setExpandedId(isExpanded ? null : obs.id)}
-                  className="w-full text-left"
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      {/* Badges */}
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <span
-                          className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-                            TYPE_BADGE[type] || TYPE_BADGE.GENERAL
-                          }`}
-                        >
-                          {TYPE_LABELS[type] || type}
-                        </span>
-                        <span
-                          className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-                            PRIORITY_BADGE[priority] || PRIORITY_BADGE.Medium
-                          }`}
-                        >
-                          {priority}
-                        </span>
-                        {!isOpen && (
-                          <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                            Closed
+              return (
+                <Card key={obs.id} className="cursor-pointer transition-shadow hover:shadow-md">
+                  {/* Card header — click to expand */}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : obs.id)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        {/* Badges */}
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span
+                            className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                              TYPE_BADGE[type] || TYPE_BADGE.GENERAL
+                            }`}
+                          >
+                            {TYPE_LABELS[type] || type}
                           </span>
-                        )}
+                          <span
+                            className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                              PRIORITY_BADGE[priority] || PRIORITY_BADGE.Medium
+                            }`}
+                          >
+                            {priority}
+                          </span>
+                          {!isOpen && (
+                            <span className="rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                              Closed
+                            </span>
+                          )}
+                        </div>
+
+                        <h3 className="text-base font-bold text-slate-900">{obs.title}</h3>
+
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+                          {obs.location ? (
+                            <span>
+                              Location:{" "}
+                              <span className="font-semibold text-slate-900">{obs.location}</span>
+                            </span>
+                          ) : null}
+                          {(obs.trade) ? (
+                            <span>
+                              Trade:{" "}
+                              <span className="font-semibold text-slate-900">{obs.trade}</span>
+                            </span>
+                          ) : null}
+                          {createdAt ? (
+                            <span className="text-slate-400">{createdAt}</span>
+                          ) : null}
+                        </div>
                       </div>
 
-                      <h3 className="text-base font-bold text-slate-900">{obs.title}</h3>
-
-                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
-                        {obs.location ? (
-                          <span>
-                            Location:{" "}
-                            <span className="font-semibold text-slate-900">{obs.location}</span>
-                          </span>
-                        ) : null}
-                        {(obs.trade) ? (
-                          <span>
-                            Trade:{" "}
-                            <span className="font-semibold text-slate-900">{obs.trade}</span>
-                          </span>
-                        ) : null}
-                        {createdAt ? (
-                          <span className="text-slate-400">{createdAt}</span>
-                        ) : null}
+                      <div className="flex shrink-0 items-center gap-2 sm:ml-4">
+                        <span className="text-xs text-slate-400">
+                          {isExpanded ? "▲" : "▼"}
+                        </span>
                       </div>
                     </div>
+                  </button>
 
-                    <div className="flex shrink-0 items-center gap-2 sm:ml-4">
-                      <span className="text-xs text-slate-400">
-                        {isExpanded ? "▲" : "▼"}
-                      </span>
+                  {/* Expanded detail */}
+                  {isExpanded ? (
+                    <div className="mt-4 border-t border-slate-200 pt-4">
+                      {obs.description ? (
+                        <p className="mb-4 text-sm text-slate-700 whitespace-pre-wrap">
+                          {obs.description}
+                        </p>
+                      ) : (
+                        <p className="mb-4 text-sm italic text-slate-400">No description provided.</p>
+                      )}
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleToggleStatus(obs)}
+                          className={`${isOpen ? primaryButtonClass : secondaryButtonClass} ${
+                            isBusy ? "cursor-not-allowed opacity-50" : ""
+                          }`}
+                        >
+                          {isBusy
+                            ? "Saving..."
+                            : isOpen
+                            ? "Close Observation"
+                            : "Reopen"}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleDelete(obs.id)}
+                          className={`inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 ${
+                            isBusy ? "cursor-not-allowed opacity-50" : ""
+                          }`}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  ) : null}
+                </Card>
+              );
+            })}
 
-                {/* Expanded detail */}
-                {isExpanded ? (
-                  <div className="mt-4 border-t border-slate-200 pt-4">
-                    {obs.description ? (
-                      <p className="mb-4 text-sm text-slate-700 whitespace-pre-wrap">
-                        {obs.description}
-                      </p>
-                    ) : (
-                      <p className="mb-4 text-sm italic text-slate-400">No description provided.</p>
-                    )}
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleToggleStatus(obs)}
-                        className={`${isOpen ? primaryButtonClass : secondaryButtonClass} ${
-                          isBusy ? "cursor-not-allowed opacity-50" : ""
-                        }`}
-                      >
-                        {isBusy
-                          ? "Saving..."
-                          : isOpen
-                          ? "Close Observation"
-                          : "Reopen"}
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleDelete(obs.id)}
-                        className={`inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 ${
-                          isBusy ? "cursor-not-allowed opacity-50" : ""
-                        }`}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
+            {!filtered.length ? (
+              <Card className="text-sm text-slate-500">
+                No observations match the current filters.
               </Card>
-            );
-          })}
+            ) : null}
+          </div>
+        )}
+      </div>
 
-          {!filtered.length ? (
-            <Card className="text-sm text-slate-500">
-              No observations match the current filters.
-            </Card>
-          ) : null}
+      {/* Observation list — desktop table */}
+      <div className="hidden md:block">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                {["Type", "Priority", "Title", "Location", "Trade", "Status", ""].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {loading ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">Loading observations...</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">No observations match the current filters.</td></tr>
+              ) : filtered.map((o) => (
+                <tr key={o.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3">
+                    <span className="rounded-full border px-2.5 py-0.5 text-xs font-semibold border-slate-200 bg-slate-100 text-slate-700">{o.obs_type}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${o.priority === "High" ? "border-red-200 bg-red-50 text-red-700" : o.priority === "Medium" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-100 text-slate-600"}`}>{o.priority}</span>
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{o.title || "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{o.location || "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{o.trade || "—"}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${o.status === "OPEN" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-100 text-slate-500"}`}>{o.status}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => handleToggleStatus(o)} className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                        {o.status === "OPEN" ? "Close" : "Reopen"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
     </div>
   );
 }

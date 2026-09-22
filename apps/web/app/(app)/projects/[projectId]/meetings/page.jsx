@@ -877,89 +877,127 @@ export default function MeetingsPage() {
         </form>
       )}
 
-      {/* Meetings list */}
-      {loading ? (
-        <Card className="text-sm text-slate-500">Loading meetings…</Card>
-      ) : sortedMeetings.length === 0 ? (
-        <Card className="text-sm text-slate-500">
-          No meetings yet. Click "+ New Meeting" to create one.
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {sortedMeetings.map((meeting) => {
-            const isExpanded = expandedId === meeting.id;
-            const isDeleting = !!deletingMeeting[meeting.id];
-            const openCount = meeting.open_items ?? 0;
+      {/* Meetings list — mobile cards */}
+      <div className="md:hidden">
+        {loading ? (
+          <Card className="text-sm text-slate-500">Loading meetings…</Card>
+        ) : sortedMeetings.length === 0 ? (
+          <Card className="text-sm text-slate-500">
+            No meetings yet. Click "+ New Meeting" to create one.
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {sortedMeetings.map((meeting) => {
+              const isExpanded = expandedId === meeting.id;
+              const isDeleting = !!deletingMeeting[meeting.id];
+              const openCount = meeting.open_items ?? 0;
 
-            return (
-              <div
-                key={meeting.id}
-                className="rounded-[28px] border border-black/10 bg-white shadow-sm"
-              >
-                {/* Card header — click to expand */}
-                <button
-                  type="button"
-                  onClick={() => toggleExpanded(meeting.id)}
-                  className="w-full rounded-[28px] p-4 text-left transition hover:bg-slate-50 focus:outline-none sm:p-5"
+              return (
+                <div
+                  key={meeting.id}
+                  className="rounded-[28px] border border-black/10 bg-white shadow-sm"
                 >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Meeting type badge */}
-                        <span
-                          className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${meetingTypeBadgeClass(
-                            meeting.meeting_type
-                          )}`}
-                        >
-                          {meeting.meeting_type || "Other"}
-                        </span>
-
-                        {/* Open items badge */}
-                        {openCount > 0 && (
-                          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                            {openCount} open {openCount === 1 ? "item" : "items"}
+                  {/* Card header — click to expand */}
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(meeting.id)}
+                    className="w-full rounded-[28px] p-4 text-left transition hover:bg-slate-50 focus:outline-none sm:p-5"
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* Meeting type badge */}
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${meetingTypeBadgeClass(
+                              meeting.meeting_type
+                            )}`}
+                          >
+                            {meeting.meeting_type || "Other"}
                           </span>
-                        )}
+
+                          {/* Open items badge */}
+                          {openCount > 0 && (
+                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                              {openCount} open {openCount === 1 ? "item" : "items"}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="mt-1.5 font-bold text-slate-900">
+                          {meeting.title}
+                        </div>
+
+                        <div className="mt-0.5 flex flex-wrap gap-3 text-sm text-slate-500">
+                          <span>{formatDate(meeting.meeting_date)}</span>
+                          {meeting.location && <span>{meeting.location}</span>}
+                        </div>
                       </div>
 
-                      <div className="mt-1.5 font-bold text-slate-900">
-                        {meeting.title}
-                      </div>
+                      <ChevronDown open={isExpanded} />
+                    </div>
+                  </button>
 
-                      <div className="mt-0.5 flex flex-wrap gap-3 text-sm text-slate-500">
-                        <span>{formatDate(meeting.meeting_date)}</span>
-                        {meeting.location && <span>{meeting.location}</span>}
+                  {/* Expanded body */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-100 px-4 pb-4 sm:px-5 sm:pb-5">
+                      {renderActionItemsSection(meeting)}
+
+                      {/* Delete meeting */}
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMeeting(meeting.id)}
+                          disabled={isDeleting}
+                          className={`inline-flex items-center gap-1.5 rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 ${isDeleting ? "opacity-50 cursor-not-allowed" : ""}`}
+                        >
+                          <TrashIcon />
+                          {isDeleting ? "Deleting…" : "Delete Meeting"}
+                        </button>
                       </div>
                     </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-                    <ChevronDown open={isExpanded} />
-                  </div>
-                </button>
-
-                {/* Expanded body */}
-                {isExpanded && (
-                  <div className="border-t border-slate-100 px-4 pb-4 sm:px-5 sm:pb-5">
-                    {renderActionItemsSection(meeting)}
-
-                    {/* Delete meeting */}
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteMeeting(meeting.id)}
-                        disabled={isDeleting}
-                        className={`inline-flex items-center gap-1.5 rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 ${isDeleting ? "opacity-50 cursor-not-allowed" : ""}`}
-                      >
-                        <TrashIcon />
-                        {isDeleting ? "Deleting…" : "Delete Meeting"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      {/* Meetings list — desktop table */}
+      <div className="hidden md:block">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                {["Date", "Type", "Title", "Location", ""].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {loading ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-400">Loading meetings…</td></tr>
+              ) : sortedMeetings.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-400">No meetings yet.</td></tr>
+              ) : sortedMeetings.map((m) => (
+                <tr key={m.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}>
+                  <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                    {m.meeting_date ? new Date(m.meeting_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">{m.meeting_type || "—"}</span>
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{m.title || "Untitled"}</td>
+                  <td className="px-4 py-3 text-slate-600">{m.location || "—"}</td>
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <button type="button" onClick={() => handleDeleteMeeting(m.id)} className="rounded-lg border border-red-100 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100">Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
     </div>
   );
 }
