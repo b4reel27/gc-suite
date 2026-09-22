@@ -6,24 +6,48 @@ import { usePathname } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
-const PROJECT_TABS = [
-  { label: "Plans",          path: "plans" },
-  { label: "Issues",         path: "punch" },
-  { label: "Schedule",       path: "schedule" },
-  { label: "RFIs",           path: "rfis" },
-  { label: "Submittals",     path: "submittals" },
-  { label: "Forms",          path: "forms" },
-  { label: "Daily Log",      path: "daily-log" },
-  { label: "Budget",         path: "budget" },
-  { label: "Change Orders",  path: "change-orders" },
-  { label: "Directory",      path: "directory" },
-  { label: "Meetings",       path: "meetings" },
-  { label: "Observations",   path: "observations" },
+const NAV_GROUPS = [
+  {
+    label: "Field",
+    tabs: [
+      { label: "Plans",      path: "plans",      icon: "📐" },
+      { label: "Issues",     path: "punch",      icon: "⚠️" },
+      { label: "Schedule",   path: "schedule",   icon: "📅" },
+      { label: "Daily Log",  path: "daily-log",  icon: "📝" },
+      { label: "Forms / JSA",path: "forms",      icon: "📋" },
+    ],
+  },
+  {
+    label: "Project Mgmt",
+    tabs: [
+      { label: "RFIs",         path: "rfis",       icon: "📨" },
+      { label: "Submittals",   path: "submittals", icon: "📦" },
+      { label: "Observations", path: "observations", icon: "🔍" },
+    ],
+  },
+  {
+    label: "Finance",
+    tabs: [
+      { label: "Budget",        path: "budget",        icon: "💰" },
+      { label: "Change Orders", path: "change-orders", icon: "🔄" },
+    ],
+  },
+  {
+    label: "Team",
+    tabs: [
+      { label: "Directory", path: "directory", icon: "👥" },
+      { label: "Meetings",  path: "meetings",  icon: "🤝" },
+    ],
+  },
 ];
+
+// Flat list for mobile pill scroll
+const ALL_TABS = NAV_GROUPS.flatMap((g) => g.tabs);
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [activeProjectId, setActiveProjectId] = useState("");
   const [projectName, setProjectName]         = useState("");
+  const [mobileNavOpen, setMobileNavOpen]     = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -46,6 +70,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, []);
 
+  // Close mobile nav on route change
+  useEffect(() => { setMobileNavOpen(false); }, [pathname]);
+
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -53,75 +80,87 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     window.location.href = "/login";
   }
 
+  const isTabActive = (path: string) => pathname?.includes(`/${path}`);
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto w-full max-w-7xl px-2 py-2 sm:px-4 sm:py-4">
-        <div className="grid gap-3 lg:grid-cols-[240px_1fr] lg:gap-4">
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <div className="mx-auto flex w-full max-w-[1400px] lg:min-h-screen">
 
-          {/* ── Sidebar ──────────────────────────────────────────────────── */}
-          <aside className="flex min-w-0 flex-col gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+        {/* ── Desktop Sidebar ────────────────────────────────────────────── */}
+        <aside className="hidden lg:flex w-64 flex-shrink-0 flex-col border-r border-slate-200 bg-white">
+          {/* Brand */}
+          <div className="border-b border-slate-100 px-5 py-4">
+            <div className="text-lg font-extrabold tracking-tight text-slate-900">GC Suite</div>
+            <div className="mt-0.5 text-xs text-slate-400">Construction Management</div>
+          </div>
 
-            {/* Brand */}
-            <div>
-              <div className="text-xl font-extrabold tracking-tight text-slate-900">GC Suite</div>
-            </div>
-
-            {/* Top nav — side by side */}
-            <div className="grid grid-cols-2 gap-2">
+          {/* Top nav */}
+          <div className="border-b border-slate-100 px-3 py-3">
+            <div className="flex flex-col gap-1">
               <Link
                 href="/dashboard"
-                className={`rounded-xl border px-2 py-2.5 text-center text-sm font-bold transition ${
+                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                   pathname === "/dashboard"
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                Dashboard
+                <span>🏠</span> Dashboard
               </Link>
               <Link
                 href="/projects"
-                className={`rounded-xl border px-2 py-2.5 text-center text-sm font-bold transition ${
+                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                   pathname === "/projects"
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                Projects
+                <span>📁</span> Projects
               </Link>
             </div>
+          </div>
 
-            {/* Active project + horizontal pill sub-nav */}
+          {/* Project nav */}
+          <div className="flex-1 overflow-y-auto px-3 py-3">
             {activeProjectId ? (
-              <div className="min-w-0 overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50 p-2.5">
-                <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-600">
-                  Active Project
+              <>
+                {/* Active project label */}
+                <div className="mb-3 px-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Active Project</div>
+                  <div className="mt-0.5 truncate text-sm font-bold text-slate-800">{projectName || "Loading…"}</div>
                 </div>
-                <div className="mb-2 truncate text-sm font-bold text-emerald-900">
-                  {projectName || "Loading…"}
-                </div>
-                {/* Scrollable pill row */}
-                <div className="flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-                  {PROJECT_TABS.map((tab) => {
-                    const href = `/projects/${activeProjectId}/${tab.path}`;
-                    const active = pathname?.includes(`/${tab.path}`);
-                    return (
-                      <Link
-                        key={tab.path}
-                        href={href}
-                        className={`flex-shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-                          active
-                            ? "border-emerald-700 bg-emerald-700 text-white"
-                            : "border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100"
-                        }`}
-                      >
-                        {tab.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
+
+                {/* Grouped vertical nav */}
+                {NAV_GROUPS.map((group) => (
+                  <div key={group.label} className="mb-4">
+                    <div className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      {group.label}
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      {group.tabs.map((tab) => {
+                        const href = `/projects/${activeProjectId}/${tab.path}`;
+                        const active = isTabActive(tab.path);
+                        return (
+                          <Link
+                            key={tab.path}
+                            href={href}
+                            className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${
+                              active
+                                ? "bg-emerald-50 font-semibold text-emerald-800 ring-1 ring-emerald-200"
+                                : "font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            }`}
+                          >
+                            <span className="text-base leading-none">{tab.icon}</span>
+                            {tab.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </>
             ) : (
-              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-500">
                 No active project.{" "}
                 <Link href="/projects" className="font-semibold text-slate-700 underline">
                   Choose one
@@ -129,24 +168,82 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 .
               </div>
             )}
+          </div>
 
-            <div className="mt-auto">
+          {/* Logout */}
+          <div className="border-t border-slate-100 px-4 py-4">
+            <button
+              onClick={handleLogout}
+              type="button"
+              className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Sign Out
+            </button>
+          </div>
+        </aside>
+
+        {/* ── Mobile Header ───────────────────────────────────────────────── */}
+        <div className="flex flex-1 flex-col lg:hidden">
+          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+            <div className="text-base font-extrabold tracking-tight text-slate-900">GC Suite</div>
+            <div className="flex items-center gap-2">
+              <Link href="/dashboard" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                Dashboard
+              </Link>
+              <Link href="/projects" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
+                Projects
+              </Link>
               <button
-                onClick={handleLogout}
-                className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
                 type="button"
+                onClick={handleLogout}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
               >
                 Logout
               </button>
             </div>
-          </aside>
+          </header>
 
-          {/* ── Main content ─────────────────────────────────────────────── */}
-          <main className="min-w-0 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
+          {/* Mobile: active project + horizontal pill scroll */}
+          {activeProjectId && (
+            <div className="border-b border-slate-200 bg-emerald-50 px-3 py-2">
+              <div className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-emerald-600">
+                {projectName || "Loading…"}
+              </div>
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+                {ALL_TABS.map((tab) => {
+                  const href = `/projects/${activeProjectId}/${tab.path}`;
+                  const active = isTabActive(tab.path);
+                  return (
+                    <Link
+                      key={tab.path}
+                      href={href}
+                      className={`flex-shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                        active
+                          ? "border-emerald-700 bg-emerald-700 text-white"
+                          : "border-emerald-300 bg-white text-emerald-800"
+                      }`}
+                    >
+                      {tab.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Mobile main content */}
+          <main className="flex-1 p-3">
             {children}
           </main>
-
         </div>
+
+        {/* ── Desktop main content ────────────────────────────────────────── */}
+        <main className="hidden flex-1 flex-col lg:flex">
+          <div className="flex-1 p-6">
+            {children}
+          </div>
+        </main>
+
       </div>
     </div>
   );
