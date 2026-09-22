@@ -105,7 +105,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                <span>🏠</span> Dashboard
+                Dashboard
               </Link>
               <Link
                 href="/projects"
@@ -115,7 +115,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
-                <span>📁</span> Projects
+                Projects
               </Link>
             </div>
           </div>
@@ -150,7 +150,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 : "font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                             }`}
                           >
-                            <span className="text-base leading-none">{tab.icon}</span>
                             {tab.label}
                           </Link>
                         );
