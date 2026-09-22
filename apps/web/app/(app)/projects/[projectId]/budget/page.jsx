@@ -405,181 +405,177 @@ export default function BudgetPage() {
           </form>
         ) : null}
 
-        {/* Table */}
+        {/* Card list — mobile-first */}
         {loading ? (
           <div className="mt-4 text-sm text-slate-500">Loading budget...</div>
         ) : items.length === 0 ? (
-          <div className="mt-4 text-sm text-slate-500">No budget line items yet. Add one above.</div>
+          <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+            No budget line items yet. Add one above.
+          </div>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left">
-                  <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Cost Code</th>
-                  <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Description</th>
-                  <th className="pb-2 pr-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Category</th>
-                  <th className="pb-2 pr-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Original</th>
-                  <th className="pb-2 pr-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Approved COs</th>
-                  <th className="pb-2 pr-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Committed</th>
-                  <th className="pb-2 pr-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actual</th>
-                  <th className="pb-2 pr-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Variance</th>
-                  <th className="pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {items.map((item) => {
-                  const isEditing = !!editRows[item.id];
-                  const ef = editRows[item.id] || {};
-                  const rowVariance =
-                    (Number(item.original_amount) || 0) +
-                    (Number(item.approved_co_amount) || 0) -
-                    (Number(item.actual_cost) || 0);
+          <div className="mt-4 space-y-3">
+            {items.map((item) => {
+              const isEditing = !!editRows[item.id];
+              const ef = editRows[item.id] || {};
+              const rowVariance =
+                (Number(item.original_amount) || 0) +
+                (Number(item.approved_co_amount) || 0) -
+                (Number(item.actual_cost) || 0);
 
-                  if (isEditing) {
-                    return (
-                      <tr key={item.id} className="bg-blue-50">
-                        <td className="py-2 pr-4">
-                          <input
-                            value={ef.cost_code}
-                            onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], cost_code: e.target.value } }))}
-                            className="w-24 rounded-xl border border-black/10 bg-white px-2 py-1 text-sm"
-                          />
-                        </td>
-                        <td className="py-2 pr-4">
-                          <input
-                            value={ef.description}
-                            onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], description: e.target.value } }))}
-                            className="w-40 rounded-xl border border-black/10 bg-white px-2 py-1 text-sm"
-                          />
-                        </td>
-                        <td className="py-2 pr-4">
-                          <select
-                            value={ef.category}
-                            onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], category: e.target.value } }))}
-                            className="rounded-xl border border-black/10 bg-white px-2 py-1 text-sm"
-                          >
-                            {CATEGORIES.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-2 pr-4">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={ef.original_amount}
-                            onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], original_amount: e.target.value } }))}
-                            className="w-28 rounded-xl border border-black/10 bg-white px-2 py-1 text-right text-sm"
-                          />
-                        </td>
-                        <td className="py-2 pr-4 text-right text-slate-500 text-xs">
-                          {fmtDollars(item.approved_co_amount)}
-                        </td>
-                        <td className="py-2 pr-4">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={ef.committed_amount}
-                            onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], committed_amount: e.target.value } }))}
-                            className="w-28 rounded-xl border border-black/10 bg-white px-2 py-1 text-right text-sm"
-                          />
-                        </td>
-                        <td className="py-2 pr-4">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={ef.actual_cost}
-                            onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], actual_cost: e.target.value } }))}
-                            className="w-28 rounded-xl border border-black/10 bg-white px-2 py-1 text-right text-sm"
-                          />
-                        </td>
-                        <td className="py-2 pr-4" />
-                        <td className="py-2">
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => saveEdit(item.id)}
-                              disabled={!!editBusy[item.id]}
-                              className="rounded-xl bg-[#0b1220] px-3 py-1 text-xs font-semibold text-white hover:bg-[#162033] disabled:opacity-50"
-                            >
-                              {editBusy[item.id] ? "..." : "Save"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => cancelEdit(item.id)}
-                              className="rounded-xl border border-black/10 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
+              if (isEditing) {
+                return (
+                  <div key={item.id} className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+                    <div className="mb-3 text-sm font-semibold text-slate-800">Editing Line Item</div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className={labelClass}>Cost Code</label>
+                        <input
+                          value={ef.cost_code}
+                          onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], cost_code: e.target.value } }))}
+                          className={fieldClass}
+                          placeholder="e.g. 03-100"
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Category</label>
+                        <select
+                          value={ef.category}
+                          onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], category: e.target.value } }))}
+                          className={fieldClass}
+                        >
+                          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className={labelClass}>Description</label>
+                        <input
+                          value={ef.description}
+                          onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], description: e.target.value } }))}
+                          className={fieldClass}
+                          placeholder="Description"
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Original ($)</label>
+                        <input type="number" step="0.01" value={ef.original_amount}
+                          onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], original_amount: e.target.value } }))}
+                          className={fieldClass} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Approved COs ($)</label>
+                        <input type="number" step="0.01" value={ef.approved_co_amount}
+                          onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], approved_co_amount: e.target.value } }))}
+                          className={fieldClass} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Committed ($)</label>
+                        <input type="number" step="0.01" value={ef.committed_amount}
+                          onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], committed_amount: e.target.value } }))}
+                          className={fieldClass} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Actual Cost ($)</label>
+                        <input type="number" step="0.01" value={ef.actual_cost}
+                          onChange={(e) => setEditRows((prev) => ({ ...prev, [item.id]: { ...prev[item.id], actual_cost: e.target.value } }))}
+                          className={fieldClass} />
+                      </div>
+                    </div>
+                    <div className="mt-3 flex justify-end gap-2">
+                      <button type="button" onClick={() => cancelEdit(item.id)} className={secondaryButtonClass}>Cancel</button>
+                      <button type="button" onClick={() => saveEdit(item.id)} disabled={!!editBusy[item.id]}
+                        className={`${primaryButtonClass} ${editBusy[item.id] ? "opacity-60 cursor-not-allowed" : ""}`}>
+                        {editBusy[item.id] ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
 
-                  return (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-2.5 pr-4 font-mono text-xs text-slate-700">{item.cost_code || "—"}</td>
-                      <td className="py-2.5 pr-4 font-medium text-slate-900">{item.description || "—"}</td>
-                      <td className="py-2.5 pr-4">
-                        <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
-                          {item.category || "—"}
-                        </span>
-                      </td>
-                      <td className="py-2.5 pr-4 text-right text-slate-900">{fmtDollars(item.original_amount)}</td>
-                      <td className="py-2.5 pr-4 text-right text-slate-700">{fmtDollars(item.approved_co_amount)}</td>
-                      <td className="py-2.5 pr-4 text-right text-slate-700">{fmtDollars(item.committed_amount)}</td>
-                      <td className="py-2.5 pr-4 text-right text-slate-700">{fmtDollars(item.actual_cost)}</td>
-                      <td className={`py-2.5 pr-4 text-right font-semibold ${rowVariance < 0 ? "text-red-600" : "text-emerald-600"}`}>
+              return (
+                <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  {/* Header row */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      {item.cost_code ? (
+                        <span className="mr-2 font-mono text-xs text-slate-500">{item.cost_code}</span>
+                      ) : null}
+                      <span className="font-semibold text-slate-900">{item.description || "Untitled"}</span>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                      {item.category || "—"}
+                    </span>
+                  </div>
+
+                  {/* Amounts grid */}
+                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Original</div>
+                      <div className="mt-0.5 font-medium text-slate-900">{fmtDollars(item.original_amount)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Approved COs</div>
+                      <div className="mt-0.5 font-medium text-slate-700">{fmtDollars(item.approved_co_amount)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Committed</div>
+                      <div className="mt-0.5 font-medium text-slate-700">{fmtDollars(item.committed_amount)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Actual</div>
+                      <div className="mt-0.5 font-medium text-slate-700">{fmtDollars(item.actual_cost)}</div>
+                    </div>
+                  </div>
+
+                  {/* Variance + actions */}
+                  <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                    <div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Variance </span>
+                      <span className={`text-sm font-bold ${rowVariance < 0 ? "text-red-600" : "text-emerald-600"}`}>
                         {fmtDollars(rowVariance)}
-                      </td>
-                      <td className="py-2.5">
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(item)}
-                            title="Edit"
-                            className="rounded-xl border border-black/10 bg-white p-1.5 text-slate-600 hover:bg-slate-50 transition-colors"
-                          >
-                            {/* Pencil icon */}
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                              <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteItem(item.id)}
-                            title="Delete"
-                            className="rounded-xl border border-red-100 bg-red-50 p-1.5 text-red-600 hover:bg-red-100 transition-colors"
-                          >
-                            {/* Trash icon */}
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              {/* Totals row */}
-              <tfoot>
-                <tr className="border-t-2 border-slate-300">
-                  <td colSpan={3} className="pt-3 pb-1 text-xs font-bold uppercase tracking-wide text-slate-700">
-                    Totals
-                  </td>
-                  <td className="pt-3 pb-1 pr-4 text-right font-bold text-slate-900">{fmtDollars(computedTotals.original)}</td>
-                  <td className="pt-3 pb-1 pr-4 text-right font-bold text-slate-700">{fmtDollars(computedTotals.approved_co)}</td>
-                  <td className="pt-3 pb-1 pr-4 text-right font-bold text-slate-700">{fmtDollars(computedTotals.committed)}</td>
-                  <td className="pt-3 pb-1 pr-4 text-right font-bold text-slate-700">{fmtDollars(computedTotals.actual)}</td>
-                  <td className={`pt-3 pb-1 pr-4 text-right font-bold ${variance < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                    {fmtDollars(variance)}
-                  </td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => startEdit(item)} className={secondaryButtonClass} style={{padding: "6px 12px", fontSize: "12px"}}>
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => deleteItem(item.id)}
+                        className="inline-flex items-center justify-center rounded-2xl border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100">
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Totals card */}
+            <div className="rounded-2xl border-2 border-slate-300 bg-slate-50 p-4">
+              <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">Totals</div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Original</div>
+                  <div className="mt-0.5 font-bold text-slate-900">{fmtDollars(computedTotals.original)}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Approved COs</div>
+                  <div className="mt-0.5 font-bold text-slate-700">{fmtDollars(computedTotals.approved_co)}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Committed</div>
+                  <div className="mt-0.5 font-bold text-slate-700">{fmtDollars(computedTotals.committed)}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Actual</div>
+                  <div className="mt-0.5 font-bold text-slate-700">{fmtDollars(computedTotals.actual)}</div>
+                </div>
+              </div>
+              <div className="mt-3 border-t border-slate-200 pt-3">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Total Variance </span>
+                <span className={`text-base font-bold ${variance < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                  {fmtDollars(variance)}
+                </span>
+              </div>
+            </div>
           </div>
         )}
       </div>
