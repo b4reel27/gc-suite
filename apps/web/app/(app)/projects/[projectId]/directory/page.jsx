@@ -527,115 +527,157 @@ export default function DirectoryPage() {
         />
       )}
 
-      {/* List */}
-      {loading ? (
-        <Card className="text-sm text-slate-500">Loading contacts…</Card>
-      ) : grouped.length === 0 ? (
-        <Card className="text-sm text-slate-500">
-          {query
-            ? "No contacts match your search."
-            : 'No contacts yet. Click "+ Add Contact" to get started.'}
-        </Card>
-      ) : (
-        <div className="space-y-6">
-          {grouped.map(([company, members]) => (
-            <div key={company}>
-              {/* Company header */}
-              <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                {company}
-              </div>
+      {/* List — mobile cards */}
+      <div className="md:hidden">
+        {loading ? (
+          <Card className="text-sm text-slate-500">Loading contacts…</Card>
+        ) : grouped.length === 0 ? (
+          <Card className="text-sm text-slate-500">
+            {query
+              ? "No contacts match your search."
+              : 'No contacts yet. Click "+ Add Contact" to get started.'}
+          </Card>
+        ) : (
+          <div className="space-y-6">
+            {grouped.map(([company, members]) => (
+              <div key={company}>
+                {/* Company header */}
+                <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  {company}
+                </div>
 
-              <div className="space-y-3">
-                {members.map((c) => {
-                  // Edit mode: replace the card with an inline form
-                  if (editId === c.id) {
+                <div className="space-y-3">
+                  {members.map((c) => {
+                    // Edit mode: replace the card with an inline form
+                    if (editId === c.id) {
+                      return (
+                        <ContactFormCard
+                          key={c.id}
+                          title="Edit Contact"
+                          formData={editForm}
+                          onChangeField={(field, value) =>
+                            setEditForm((prev) => patchForm(prev, field, value))
+                          }
+                          onSubmit={handleEdit}
+                          onCancel={() => setEditId(null)}
+                          saving={editSaving}
+                        />
+                      );
+                    }
+
                     return (
-                      <ContactFormCard
-                        key={c.id}
-                        title="Edit Contact"
-                        formData={editForm}
-                        onChangeField={(field, value) =>
-                          setEditForm((prev) => patchForm(prev, field, value))
-                        }
-                        onSubmit={handleEdit}
-                        onCancel={() => setEditId(null)}
-                        saving={editSaving}
-                      />
+                      <Card key={c.id}>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          {/* Contact info */}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-slate-900">
+                              {c.name}
+                            </div>
+
+                            {(c.role || c.trade) && (
+                              <div className="mt-0.5 text-sm text-slate-500">
+                                {[c.role, c.trade].filter(Boolean).join(" · ")}
+                              </div>
+                            )}
+
+                            <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                              {c.phone && (
+                                <a
+                                  href={`tel:${c.phone}`}
+                                  className="inline-flex items-center gap-1.5 text-blue-600 hover:underline"
+                                >
+                                  <PhoneIcon />
+                                  {c.phone}
+                                </a>
+                              )}
+                              {c.email && (
+                                <a
+                                  href={`mailto:${c.email}`}
+                                  className="inline-flex items-center gap-1.5 text-blue-600 hover:underline"
+                                >
+                                  <EmailIcon />
+                                  {c.email}
+                                </a>
+                              )}
+                            </div>
+
+                            {c.notes && (
+                              <div className="mt-2 text-sm text-slate-500">
+                                {c.notes}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex shrink-0 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(c)}
+                              className={secondaryButtonClass}
+                              title="Edit contact"
+                            >
+                              <PencilIcon />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(c.id)}
+                              className={dangerButtonClass}
+                              title="Delete contact"
+                            >
+                              <TrashIcon />
+                            </button>
+                          </div>
+                        </div>
+                      </Card>
                     );
-                  }
-
-                  return (
-                    <Card key={c.id}>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        {/* Contact info */}
-                        <div className="min-w-0 flex-1">
-                          <div className="font-bold text-slate-900">
-                            {c.name}
-                          </div>
-
-                          {(c.role || c.trade) && (
-                            <div className="mt-0.5 text-sm text-slate-500">
-                              {[c.role, c.trade].filter(Boolean).join(" · ")}
-                            </div>
-                          )}
-
-                          <div className="mt-2 flex flex-wrap gap-4 text-sm">
-                            {c.phone && (
-                              <a
-                                href={`tel:${c.phone}`}
-                                className="inline-flex items-center gap-1.5 text-blue-600 hover:underline"
-                              >
-                                <PhoneIcon />
-                                {c.phone}
-                              </a>
-                            )}
-                            {c.email && (
-                              <a
-                                href={`mailto:${c.email}`}
-                                className="inline-flex items-center gap-1.5 text-blue-600 hover:underline"
-                              >
-                                <EmailIcon />
-                                {c.email}
-                              </a>
-                            )}
-                          </div>
-
-                          {c.notes && (
-                            <div className="mt-2 text-sm text-slate-500">
-                              {c.notes}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex shrink-0 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(c)}
-                            className={secondaryButtonClass}
-                            title="Edit contact"
-                          >
-                            <PencilIcon />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(c.id)}
-                            className={dangerButtonClass}
-                            title="Delete contact"
-                          >
-                            <TrashIcon />
-                          </button>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })}
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* List — desktop table */}
+      <div className="hidden md:block">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                {["Name", "Company", "Role / Trade", "Phone", "Email", ""].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {loading ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">Loading contacts…</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">No contacts found.</td></tr>
+              ) : filtered.map((c) => (
+                <tr key={c.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
+                  <td className="px-4 py-3 text-slate-600">{c.company || "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{[c.role, c.trade].filter(Boolean).join(" / ") || "—"}</td>
+                  <td className="px-4 py-3">
+                    {c.phone ? <a href={`tel:${c.phone}`} className="text-blue-600 hover:underline">{c.phone}</a> : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    {c.email ? <a href={`mailto:${c.email}`} className="text-blue-600 hover:underline">{c.email}</a> : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => startEdit(c)} className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
+                      <button type="button" onClick={() => handleDelete(c.id)} className="rounded-lg border border-red-100 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
     </div>
   );
 }
