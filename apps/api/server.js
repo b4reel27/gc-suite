@@ -24,14 +24,15 @@ import nodemailer from "nodemailer";
 
 dotenv.config();
 
-// Configure Cloudinary from CLOUDINARY_URL env var (format: cloudinary://key:secret@cloud)
+// Configure Cloudinary from CLOUDINARY_URL env var (format: cloudinary://key:secret@cloud_name)
 if (process.env.CLOUDINARY_URL) {
-  const url = new URL(process.env.CLOUDINARY_URL);
-  cloudinary.config({
-    cloud_name: url.hostname,
-    api_key: url.username,
-    api_secret: url.password,
-  });
+  const m = process.env.CLOUDINARY_URL.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
+  if (m) {
+    cloudinary.config({ api_key: m[1], api_secret: m[2], cloud_name: m[3] });
+    console.log("Cloudinary configured for cloud:", m[3]);
+  } else {
+    console.error("CLOUDINARY_URL format invalid — expected cloudinary://key:secret@cloud_name");
+  }
 }
 
 const app = express();
