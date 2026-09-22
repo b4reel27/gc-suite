@@ -2078,7 +2078,7 @@ app.delete("/jsa/:jsaId", requireAuth, async (req, res) => {
 function uploadToCloudinary(buffer, opts = {}) {
   return new Promise((resolve, reject) => {
     cloudinary.uploader
-      .upload_stream({ resource_type: "raw", folder: "gc-suite/plans", ...opts }, (err, result) => {
+      .upload_stream({ resource_type: "raw", access_mode: "public", folder: "gc-suite/plans", ...opts }, (err, result) => {
         if (err) reject(err);
         else resolve(result);
       })
