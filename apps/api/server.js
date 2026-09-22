@@ -2146,6 +2146,21 @@ app.post("/projects/:projectId/plans/:sheetId/supersede", requireAuth, async (re
   }
 });
 
+app.get("/projects/:projectId/plans/sheets/:sheetId", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const store = await readPlans(projectId);
+    const sheet = (store.sheets || []).find((s) => s.sheetId === decodeURIComponent(sheetId));
+    if (!sheet) return apiError(res, 404, "Sheet not found");
+    res.json(sheet);
+  } catch (e) {
+    console.error(e);
+    return handleThrownAccessError(res, e);
+  }
+});
+
 app.post(
   "/projects/:projectId/plans/upload",
   requireAuth,
