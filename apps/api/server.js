@@ -2308,7 +2308,484 @@ async function ensureNewTables() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`).catch(() => {});
   await pool.query(`CREATE INDEX IF NOT EXISTS plan_annotations_sheet_idx ON plan_annotations(project_id, sheet_id)`).catch(() => {});
+
+  // Budget
+  await pool.query(`CREATE TABLE IF NOT EXISTS budget_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    cost_code TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',
+    original_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+    approved_co_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+    committed_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+    actual_cost NUMERIC(14,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+
+  // Change Events (PCOs)
+  await pool.query(`CREATE TABLE IF NOT EXISTS change_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    number SERIAL,
+    title TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL DEFAULT 'OTHER',
+    status TEXT NOT NULL DEFAULT 'DRAFT',
+    potential_impact NUMERIC(14,2) NOT NULL DEFAULT 0,
+    days_impact INT NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+
+  // Change Orders (COs)
+  await pool.query(`CREATE TABLE IF NOT EXISTS change_orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    number SERIAL,
+    title TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'DRAFT',
+    amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+    days_impact INT NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT '',
+    executed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+
+  // Project Directory
+  await pool.query(`CREATE TABLE IF NOT EXISTS project_contacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL DEFAULT '',
+    company TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT '',
+    trade TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+
+  // Meetings
+  await pool.query(`CREATE TABLE IF NOT EXISTS meetings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    meeting_type TEXT NOT NULL DEFAULT 'OAC',
+    title TEXT NOT NULL DEFAULT '',
+    meeting_date DATE,
+    location TEXT NOT NULL DEFAULT '',
+    attendees TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS meeting_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    meeting_id UUID NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    item_number INT NOT NULL DEFAULT 1,
+    topic TEXT NOT NULL DEFAULT '',
+    discussion TEXT NOT NULL DEFAULT '',
+    action_required TEXT NOT NULL DEFAULT '',
+    responsible_party TEXT NOT NULL DEFAULT '',
+    due_date DATE,
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
+
+  // Observations
+  await pool.query(`CREATE TABLE IF NOT EXISTS observations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    obs_type TEXT NOT NULL DEFAULT 'GENERAL',
+    title TEXT NOT NULL DEFAULT '',
+    location TEXT NOT NULL DEFAULT '',
+    trade TEXT NOT NULL DEFAULT '',
+    priority TEXT NOT NULL DEFAULT 'Medium',
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    description TEXT NOT NULL DEFAULT '',
+    photo_url TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`).catch(() => {});
 }
+
+/* ── BUDGET ─────────────────────────────────────────────────────────── */
+
+app.get("/projects/:projectId/budget", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT * FROM budget_items WHERE project_id=$1 ORDER BY created_at ASC`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/budget", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { cost_code = "", description = "", category = "", original_amount = 0 } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO budget_items(project_id,cost_code,description,category,original_amount)
+       VALUES($1,$2,$3,$4,$5) RETURNING *`,
+      [projectId, cost_code, description, category, original_amount]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/budget-item/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { cost_code, description, category, original_amount, approved_co_amount, committed_amount, actual_cost } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE budget_items SET cost_code=$1,description=$2,category=$3,
+       original_amount=$4,approved_co_amount=$5,committed_amount=$6,actual_cost=$7
+       WHERE id=$8 RETURNING *`,
+      [cost_code, description, category, original_amount, approved_co_amount, committed_amount, actual_cost, id]
+    );
+    if (!rows.length) return apiError(res, 404, "Not found");
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/budget-item/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    await pool.query(`DELETE FROM budget_items WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+/* ── CHANGE EVENTS (PCOs) ────────────────────────────────────────────── */
+
+app.get("/projects/:projectId/change-events", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT * FROM change_events WHERE project_id=$1 ORDER BY created_at DESC`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/change-events", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { title = "", reason = "OTHER", potential_impact = 0, days_impact = 0, description = "" } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO change_events(project_id,title,reason,potential_impact,days_impact,description)
+       VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [projectId, title, reason, potential_impact, days_impact, description]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/change-event/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { title, reason, status, potential_impact, days_impact, description } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE change_events SET title=$1,reason=$2,status=$3,potential_impact=$4,days_impact=$5,
+       description=$6,updated_at=NOW() WHERE id=$7 RETURNING *`,
+      [title, reason, status, potential_impact, days_impact, description, id]
+    );
+    if (!rows.length) return apiError(res, 404, "Not found");
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/change-event/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    await pool.query(`DELETE FROM change_events WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+/* ── CHANGE ORDERS (COs) ─────────────────────────────────────────────── */
+
+app.get("/projects/:projectId/change-orders", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT * FROM change_orders WHERE project_id=$1 ORDER BY created_at DESC`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/change-orders", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { title = "", amount = 0, days_impact = 0, description = "" } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO change_orders(project_id,title,amount,days_impact,description)
+       VALUES($1,$2,$3,$4,$5) RETURNING *`,
+      [projectId, title, amount, days_impact, description]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/change-order/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { title, status, amount, days_impact, description } = req.body;
+    const executed_at = status === "EXECUTED" ? "NOW()" : "NULL";
+    const { rows } = await pool.query(
+      `UPDATE change_orders SET title=$1,status=$2,amount=$3,days_impact=$4,
+       description=$5,executed_at=${executed_at},updated_at=NOW() WHERE id=$6 RETURNING *`,
+      [title, status, amount, days_impact, description, id]
+    );
+    if (!rows.length) return apiError(res, 404, "Not found");
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/change-order/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    await pool.query(`DELETE FROM change_orders WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+/* ── PROJECT DIRECTORY ───────────────────────────────────────────────── */
+
+app.get("/projects/:projectId/contacts", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT * FROM project_contacts WHERE project_id=$1 ORDER BY company ASC, name ASC`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/contacts", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { name = "", company = "", role = "", trade = "", phone = "", email = "", notes = "" } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO project_contacts(project_id,name,company,role,trade,phone,email,notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [projectId, name, company, role, trade, phone, email, notes]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/contact/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { name, company, role, trade, phone, email, notes } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE project_contacts SET name=$1,company=$2,role=$3,trade=$4,phone=$5,email=$6,notes=$7
+       WHERE id=$8 RETURNING *`,
+      [name, company, role, trade, phone, email, notes, id]
+    );
+    if (!rows.length) return apiError(res, 404, "Not found");
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/contact/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    await pool.query(`DELETE FROM project_contacts WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+/* ── MEETINGS ────────────────────────────────────────────────────────── */
+
+app.get("/projects/:projectId/meetings", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT * FROM meetings WHERE project_id=$1 ORDER BY meeting_date DESC NULLS LAST, created_at DESC`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/meetings", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { meeting_type = "OAC", title = "", meeting_date = null, location = "", attendees = "", notes = "" } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO meetings(project_id,meeting_type,title,meeting_date,location,attendees,notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [projectId, meeting_type, title, meeting_date || null, location, attendees, notes]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.get("/meeting/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { rows } = await pool.query(`SELECT * FROM meetings WHERE id=$1`, [id]);
+    if (!rows.length) return apiError(res, 404, "Not found");
+    const { rows: items } = await pool.query(
+      `SELECT * FROM meeting_items WHERE meeting_id=$1 ORDER BY item_number ASC`,
+      [id]
+    );
+    res.json({ ...rows[0], items });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/meeting/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { meeting_type, title, meeting_date, location, attendees, notes } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE meetings SET meeting_type=$1,title=$2,meeting_date=$3,location=$4,attendees=$5,notes=$6
+       WHERE id=$7 RETURNING *`,
+      [meeting_type, title, meeting_date || null, location, attendees, notes, id]
+    );
+    if (!rows.length) return apiError(res, 404, "Not found");
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/meeting/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    await pool.query(`DELETE FROM meetings WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/meeting/:id/items", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { topic = "", discussion = "", action_required = "", responsible_party = "", due_date = null, item_number = 1 } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO meeting_items(meeting_id,item_number,topic,discussion,action_required,responsible_party,due_date)
+       VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [id, item_number, topic, discussion, action_required, responsible_party, due_date || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/meeting-item/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { topic, discussion, action_required, responsible_party, due_date, status } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE meeting_items SET topic=$1,discussion=$2,action_required=$3,
+       responsible_party=$4,due_date=$5,status=$6 WHERE id=$7 RETURNING *`,
+      [topic, discussion, action_required, responsible_party, due_date || null, status, id]
+    );
+    if (!rows.length) return apiError(res, 404, "Not found");
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/meeting-item/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    await pool.query(`DELETE FROM meeting_items WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+/* ── OBSERVATIONS ────────────────────────────────────────────────────── */
+
+app.get("/projects/:projectId/observations", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { rows } = await pool.query(
+      `SELECT * FROM observations WHERE project_id=$1 ORDER BY created_at DESC`,
+      [projectId]
+    );
+    res.json(rows);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.post("/projects/:projectId/observations", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    await requireProjectMember(projectId, req.userId);
+    const { obs_type = "GENERAL", title = "", location = "", trade = "", priority = "Medium", description = "", photo_url = "" } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO observations(project_id,obs_type,title,location,trade,priority,description,photo_url)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [projectId, obs_type, title, location, trade, priority, description, photo_url]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.put("/observation/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    const { obs_type, title, location, trade, priority, status, description, photo_url } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE observations SET obs_type=$1,title=$2,location=$3,trade=$4,priority=$5,
+       status=$6,description=$7,photo_url=$8 WHERE id=$9 RETURNING *`,
+      [obs_type, title, location, trade, priority, status, description, photo_url, id]
+    );
+    if (!rows.length) return apiError(res, 404, "Not found");
+    res.json(rows[0]);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+app.delete("/observation/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUuid(id)) return apiError(res, 400, "Invalid id");
+    await pool.query(`DELETE FROM observations WHERE id=$1`, [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
 
 app.get("/projects/:projectId/rfis", requireAuth, async (req, res) => {
   await ensureNewTables();
