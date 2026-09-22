@@ -3327,6 +3327,7 @@ Example: issue|Door dragging North Entry|Glazing|North Entry|Medium|null|null`;
 
 const server = app.listen(PORT, HOST, () => {
   console.log(`GC Suite API running on port ${PORT}`);
+  ensureNewTables().catch((e) => console.error("Table migration error:", e));
 });
 
 /* SHUTDOWN */
