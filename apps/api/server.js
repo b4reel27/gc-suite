@@ -59,7 +59,11 @@ app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(helmet());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use("/uploads", express.static(UPLOAD_ROOT));
+app.use("/uploads", (req, res, next) => {
+  res.removeHeader("X-Frame-Options");
+  res.removeHeader("Content-Security-Policy");
+  next();
+}, express.static(UPLOAD_ROOT));
 
 /* RATE LIMITING */
 
