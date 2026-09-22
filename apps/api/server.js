@@ -2086,9 +2086,17 @@ function uploadToCloudinary(buffer, opts = {}) {
   });
 }
 
+// Generate a signed Cloudinary URL that bypasses ACL restrictions
+function signCloudinaryUrl(fileUrl) {
+  if (!fileUrl || !fileUrl.includes("res.cloudinary.com")) return fileUrl;
+  const match = fileUrl.match(/\/(?:raw|image|video)\/upload\/(?:v\d+\/)?(.+)$/);
+  if (!match) return fileUrl;
+  return cloudinary.url(match[1], { resource_type: "raw", sign_url: true, secure: true, type: "upload" });
+}
+
 // Shape a plan_revisions row for API responses
 function fmtRevision(rv) {
-  return { rev: rv.rev, date: rv.rev_date, status: rv.status, fileUrl: rv.file_url };
+  return { rev: rv.rev, date: rv.rev_date, status: rv.status, fileUrl: signCloudinaryUrl(rv.file_url) };
 }
 
 app.get("/projects/:projectId/plans", requireAuth, async (req, res) => {
