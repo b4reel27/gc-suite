@@ -2086,17 +2086,16 @@ function uploadToCloudinary(buffer, opts = {}) {
   });
 }
 
-// Generate a signed Cloudinary URL that bypasses ACL restrictions
-function signCloudinaryUrl(fileUrl) {
-  if (!fileUrl || !fileUrl.includes("res.cloudinary.com")) return fileUrl;
+// Extract Cloudinary public_id from a delivery URL
+function cloudinaryPublicId(fileUrl) {
+  if (!fileUrl) return null;
   const match = fileUrl.match(/\/(?:raw|image|video)\/upload\/(?:v\d+\/)?(.+)$/);
-  if (!match) return fileUrl;
-  return cloudinary.url(match[1], { resource_type: "raw", sign_url: true, secure: true, type: "upload" });
+  return match ? match[1] : null;
 }
 
-// Shape a plan_revisions row for API responses
+// Shape a plan_revisions row for API responses (fileUrl is the stored value — proxy route handles delivery)
 function fmtRevision(rv) {
-  return { rev: rv.rev, date: rv.rev_date, status: rv.status, fileUrl: signCloudinaryUrl(rv.file_url) };
+  return { rev: rv.rev, date: rv.rev_date, status: rv.status, fileUrl: rv.file_url };
 }
 
 app.get("/projects/:projectId/plans", requireAuth, async (req, res) => {
@@ -2292,6 +2291,54 @@ app.post(
 /* ERROR HANDLER */
 
 // ─── Plan Pins ────────────────────────────────────────────────────────────────
+
+// Proxy PDF delivery through the backend to avoid Cloudinary CDN ACL restrictions
+// Accepts token via query param because iframes cannot set Authorization headers
+app.get("/projects/:projectId/plans/:sheetId/pdf", async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    const rev = req.query.rev || "1";
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+
+    // Auth: header token OR query param token (needed for cross-origin iframe)
+    const token =
+      (req.headers.authorization || "").replace("Bearer ", "").trim() ||
+      (req.query.token || "").trim();
+    if (!token) return apiError(res, 401, "Unauthorized");
+    let userId;
+    try { userId = jwt.verify(token, process.env.JWT_SECRET).userId; }
+    catch { return apiError(res, 401, "Invalid token"); }
+    req.userId = userId;
+
+    await requireProjectMember(projectId, req.userId);
+
+    const { rows } = await pool.query(
+      `SELECT pr.file_url FROM plan_revisions pr
+       JOIN plan_sheets ps ON ps.id = pr.sheet_uuid
+       WHERE ps.project_id=$1 AND ps.sheet_id=$2 AND pr.rev=$3`,
+      [projectId, decodeURIComponent(sheetId), String(rev)]
+    );
+    if (!rows.length) return apiError(res, 404, "Revision not found");
+
+    const fileUrl = rows[0].file_url;
+    const publicId = cloudinaryPublicId(fileUrl);
+
+    // Generate a private (API-level) download URL — bypasses CDN ACL entirely
+    const downloadUrl = publicId
+      ? cloudinary.utils.private_download_url(publicId, "pdf", { resource_type: "raw", type: "upload" })
+      : fileUrl;
+
+    const upstream = await fetch(downloadUrl);
+    if (!upstream.ok) return apiError(res, 502, "Could not fetch PDF from storage");
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'inline; filename="plan.pdf"');
+    res.setHeader("Cache-Control", "private, max-age=3600");
+
+    const { Readable } = await import("stream");
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
 
 app.get("/projects/:projectId/plans/:sheetId/pins", requireAuth, async (req, res) => {
   try {

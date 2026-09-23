@@ -240,7 +240,7 @@ export default function PlanViewerPage() {
 
           {selected?.fileUrl ? (
             <a
-              href={selected.fileUrl.startsWith("http") ? selected.fileUrl : `${apiBase()}${selected.fileUrl}`}
+              href={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`}
               target="_blank"
               rel="noreferrer"
               className="rounded-xl bg-slate-900 px-3 py-2 text-sm text-white hover:opacity-90"
@@ -299,7 +299,7 @@ export default function PlanViewerPage() {
         {selected?.fileUrl ? (
           <iframe
             title={`Plan ${plan.sheetNo} rev ${selected.rev}`}
-            src={selected.fileUrl.startsWith("http") ? selected.fileUrl : `${apiBase()}${selected.fileUrl}`}
+            src={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`}
             className="h-[75vh] w-full"
           />
         ) : (
