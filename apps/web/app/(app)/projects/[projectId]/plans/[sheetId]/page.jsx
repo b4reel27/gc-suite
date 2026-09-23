@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 function fmtDate(iso) {
   if (!iso) return "";
@@ -36,6 +36,10 @@ export default function PlanViewerPage() {
 
   const [projectName, setProjectName] = useState("");
   const [projectLocation, setProjectLocation] = useState("");
+  const [deleteRevConfirm, setDeleteRevConfirm] = useState("");
+  const [deleteSheetConfirm, setDeleteSheetConfirm] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const router = useRouter();
 
   function apiBase() {
     if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
@@ -106,6 +110,45 @@ export default function PlanViewerPage() {
       }
     } catch {
       // Non-fatal
+    }
+  }
+
+  async function deleteRevision(rev) {
+    setDeleteBusy(true);
+    try {
+      const res = await fetch(
+        `${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/revisions/${encodeURIComponent(rev)}`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${getToken()}` } }
+      );
+      if (!res.ok) throw new Error("Delete failed");
+      const remaining = (plan.revisions || []).filter((r) => String(r.rev) !== String(rev));
+      if (!remaining.length) {
+        router.push(`/projects/${projectId}/plans`);
+      } else {
+        await loadPlan();
+        setSelectedRev(remaining[0].rev);
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDeleteBusy(false);
+      setDeleteRevConfirm("");
+    }
+  }
+
+  async function deleteSheet() {
+    setDeleteBusy(true);
+    try {
+      const res = await fetch(
+        `${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${getToken()}` } }
+      );
+      if (!res.ok) throw new Error("Delete failed");
+      router.push(`/projects/${projectId}/plans`);
+    } catch (e) {
+      setError(e.message);
+      setDeleteBusy(false);
+      setDeleteSheetConfirm(false);
     }
   }
 
@@ -255,7 +298,6 @@ export default function PlanViewerPage() {
         <div className="flex flex-wrap items-center gap-2">
           {(plan.revisions || []).map((r) => {
             const active = String(r.rev) === String(selectedRev);
-
             const badgeClass =
               r.status === "Current"
                 ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
@@ -291,6 +333,72 @@ export default function PlanViewerPage() {
             </>
           ) : (
             "Select a revision to view."
+          )}
+        </div>
+
+        {/* Delete revision */}
+        {selected && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            {deleteRevConfirm === String(selected.rev) ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-red-700">Delete revision R{selected.rev}?</span>
+                <button
+                  type="button"
+                  disabled={deleteBusy}
+                  onClick={() => deleteRevision(selected.rev)}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleteBusy ? "Deleting…" : "Yes, delete"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteRevConfirm("")}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setDeleteRevConfirm(String(selected.rev))}
+                className="text-xs text-red-600 hover:underline"
+              >
+                Delete this revision
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Delete entire sheet */}
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          {deleteSheetConfirm ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-red-700">Delete entire sheet + all revisions?</span>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={deleteSheet}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteBusy ? "Deleting…" : "Yes, delete all"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteSheetConfirm(false)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDeleteSheetConfirm(true)}
+              className="text-xs text-red-600 hover:underline"
+            >
+              Delete entire sheet
+            </button>
           )}
         </div>
       </div>

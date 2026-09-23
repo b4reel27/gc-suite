@@ -2224,6 +2224,46 @@ app.post("/projects/:projectId/plans/:sheetId/supersede", requireAuth, async (re
   } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
 
+// Delete a single revision
+app.delete("/projects/:projectId/plans/:sheetId/revisions/:rev", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId, rev } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) return apiError(res, 403, "Only GC users can delete plans");
+
+    const { rows } = await pool.query(
+      `SELECT id FROM plan_sheets WHERE project_id=$1 AND sheet_id=$2`, [projectId, sheetId]
+    );
+    if (!rows.length) return apiError(res, 404, "Sheet not found");
+    await pool.query(`DELETE FROM plan_revisions WHERE sheet_uuid=$1 AND rev=$2`, [rows[0].id, rev]);
+
+    // If no revisions left, delete the sheet too
+    const { rows: remaining } = await pool.query(
+      `SELECT id FROM plan_revisions WHERE sheet_uuid=$1`, [rows[0].id]
+    );
+    if (!remaining.length) {
+      await pool.query(`DELETE FROM plan_sheets WHERE id=$1`, [rows[0].id]);
+    }
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
+// Delete an entire sheet and all its revisions
+app.delete("/projects/:projectId/plans/:sheetId", requireAuth, async (req, res) => {
+  try {
+    const { projectId, sheetId } = req.params;
+    if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
+    const membership = await requireProjectMember(projectId, req.userId);
+    if (!isGcRole(membership.role)) return apiError(res, 403, "Only GC users can delete plans");
+
+    await pool.query(
+      `DELETE FROM plan_sheets WHERE project_id=$1 AND sheet_id=$2`, [projectId, sheetId]
+    );
+    res.json({ ok: true });
+  } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
+});
+
 app.post(
   "/projects/:projectId/plans/upload",
   requireAuth,
