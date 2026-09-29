@@ -261,7 +261,7 @@ export default function DashboardPage() {
         <div className="mt-4 flex flex-wrap gap-2">
           <Link href={`/projects/${projectId}/${ISSUE_ROUTE}`}
             className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-white transition hover:border-slate-500 hover:bg-slate-800">
-            + Issue
+            + Work to Complete
           </Link>
           <Link href={`/projects/${projectId}/daily-log`}
             className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-white transition hover:border-slate-500 hover:bg-slate-800">
@@ -348,8 +348,8 @@ export default function DashboardPage() {
                   <span className="text-lg">{overdueIssues.length ? "⚠️" : "✓"}</span>
                   <span className="text-sm font-semibold text-slate-900">
                     {overdueIssues.length
-                      ? `${overdueIssues.length} overdue issue${overdueIssues.length !== 1 ? "s" : ""}`
-                      : "No overdue issues"}
+                      ? `${overdueIssues.length} overdue item${overdueIssues.length !== 1 ? "s" : ""}`
+                      : "No overdue items"}
                   </span>
                 </div>
                 <span className="text-xs font-semibold text-slate-400">View →</span>
@@ -363,7 +363,7 @@ export default function DashboardPage() {
                   <span className="text-lg">{dueTodayIssues.length ? "📌" : "✓"}</span>
                   <span className="text-sm font-semibold text-slate-900">
                     {dueTodayIssues.length
-                      ? `${dueTodayIssues.length} issue${dueTodayIssues.length !== 1 ? "s" : ""} due today`
+                      ? `${dueTodayIssues.length} item${dueTodayIssues.length !== 1 ? "s" : ""} due today`
                       : "Nothing due today"}
                   </span>
                 </div>
@@ -376,7 +376,7 @@ export default function DashboardPage() {
           {recentIssues.length > 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-base font-bold text-slate-900">Open Issues</h2>
+                <h2 className="text-base font-bold text-slate-900">Work to Complete</h2>
                 <div className="flex items-center gap-2">
                   {openIssues.length > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600 ring-1 ring-red-200">{openIssues.length} open</span>}
                   {inProgressIssues.length > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-600 ring-1 ring-amber-200">{inProgressIssues.length} active</span>}
@@ -410,7 +410,7 @@ export default function DashboardPage() {
       <MobileQuickActions
         actions={[
           { label: "Smart Capture", icon: "✨", highlight: true, onClick: () => setShowCapture(true) },
-          { label: "New Issue", icon: "📸", href: projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#" },
+          { label: "Work to Complete", icon: "📸", href: projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#" },
           { label: "Daily Log", icon: "📝", href: projectId ? `/projects/${projectId}/daily-log` : "#" },
           { label: "New JSA", icon: "🦺", href: projectId ? `/projects/${projectId}/forms` : "#" },
           { label: "Schedule", icon: "📅", href: projectId ? `/projects/${projectId}/schedule` : "#" },

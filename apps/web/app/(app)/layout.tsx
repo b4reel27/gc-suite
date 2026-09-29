@@ -11,7 +11,7 @@ const NAV_GROUPS = [
     label: "Field",
     tabs: [
       { label: "Plans",      path: "plans",      icon: "📐" },
-      { label: "Issues",     path: "punch",      icon: "⚠️" },
+      { label: "Work to Complete", path: "punch", icon: "⚠️" },
       { label: "Schedule",   path: "schedule",   icon: "📅" },
       { label: "Daily Log",  path: "daily-log",  icon: "📝" },
       { label: "Forms / JSA",path: "forms",      icon: "📋" },
@@ -181,42 +181,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </aside>
 
-        {/* ── Mobile Header ───────────────────────────────────────────────── */}
+        {/* ── Mobile Layout ───────────────────────────────────────────────── */}
         <div className="flex min-w-0 flex-1 flex-col lg:hidden">
+          {/* Brand bar */}
           <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
             <div className="text-base font-extrabold tracking-tight text-slate-900">GC Suite</div>
-            <div className="flex items-center gap-2">
-              <Link href="/dashboard" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                Dashboard
-              </Link>
-              <Link href="/projects" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-                Projects
-              </Link>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
-              >
-                Logout
-              </button>
-            </div>
+            {projectName && (
+              <div className="truncate text-xs font-semibold text-slate-500">{projectName}</div>
+            )}
           </header>
 
-          {/* Mobile: active project + horizontal pill scroll */}
+          {/* 4-tab fixed nav */}
           {activeProjectId && (
             <div className="border-b border-slate-200 bg-emerald-50 px-3 py-2">
-              <div className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-emerald-600">
-                {projectName || "Loading…"}
-              </div>
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
-                {ALL_TABS.map((tab) => {
-                  const href = `/projects/${activeProjectId}/${tab.path}`;
+              <div className="flex gap-1.5">
+                {[
+                  { label: "Plans",            path: "plans" },
+                  { label: "Daily Log",        path: "daily-log" },
+                  { label: "Work to Complete", path: "punch" },
+                ].map((tab) => {
                   const active = isTabActive(tab.path);
                   return (
                     <Link
                       key={tab.path}
-                      href={href}
-                      className={`flex-shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                      href={`/projects/${activeProjectId}/${tab.path}`}
+                      className={`flex-1 rounded-full border py-1 text-center text-[11px] font-semibold transition ${
                         active
                           ? "border-emerald-700 bg-emerald-700 text-white"
                           : "border-emerald-300 bg-white text-emerald-800"
@@ -226,6 +215,52 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </Link>
                   );
                 })}
+                <button
+                  type="button"
+                  onClick={() => setMobileNavOpen((o) => !o)}
+                  className={`flex-shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                    mobileNavOpen
+                      ? "border-emerald-700 bg-emerald-700 text-white"
+                      : "border-emerald-300 bg-white text-emerald-800"
+                  }`}
+                >
+                  More
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* More dropdown */}
+          {mobileNavOpen && (
+            <div className="border-b border-slate-200 bg-white shadow-md">
+              <div className="grid grid-cols-3 divide-x divide-slate-100">
+                {[
+                  { label: "Schedule",      path: `projects/${activeProjectId}/schedule` },
+                  { label: "Forms / JSA",   path: `projects/${activeProjectId}/forms` },
+                  { label: "RFIs",          path: `projects/${activeProjectId}/rfis` },
+                  { label: "Submittals",    path: `projects/${activeProjectId}/submittals` },
+                  { label: "Observations",  path: `projects/${activeProjectId}/observations` },
+                  { label: "Budget",        path: `projects/${activeProjectId}/budget` },
+                  { label: "Change Orders", path: `projects/${activeProjectId}/change-orders` },
+                  { label: "Directory",     path: `projects/${activeProjectId}/directory` },
+                  { label: "Meetings",      path: `projects/${activeProjectId}/meetings` },
+                  { label: "Projects",      path: "projects" },
+                ].map((item) => (
+                  <Link
+                    key={item.path}
+                    href={`/${item.path}`}
+                    className="flex items-center justify-center border-b border-slate-100 px-2 py-3 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex items-center justify-center border-b border-slate-100 px-2 py-3 text-[11px] font-semibold text-red-600 hover:bg-red-50"
+                >
+                  Logout
+                </button>
               </div>
             </div>
           )}
