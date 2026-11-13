@@ -429,6 +429,10 @@ export default function SchedulePage() {
   const [items, setItems] = useState([]);
   const [me, setMe] = useState(null);
   const [error, setError] = useState("");
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [genStartDate, setGenStartDate] = useState("");
+  const [genLoading, setGenLoading] = useState(false);
+  const [genResult, setGenResult] = useState(null);
 
   const [projectName, setProjectName] = useState("");
   const [projectLocation, setProjectLocation] = useState("");
@@ -754,6 +758,32 @@ export default function SchedulePage() {
     return s !== "CANCELED";
   }
 
+
+  async function generateFromPlans() {
+    if (!genStartDate) {
+      setError("Set a start date first.");
+      return;
+    }
+    setGenLoading(true);
+    setError("");
+    setGenResult(null);
+    try {
+      const token = getToken();
+      const r = await fetch(`${apiBase}/projects/${projectId}/schedule/from-plans`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: token ? `Bearer ${token}` : "" },
+        body: JSON.stringify({ startDate: genStartDate }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Generation failed");
+      setGenResult(data);
+      refreshSchedule();
+    } catch (e) {
+      setError(e.message || "Failed to generate");
+    }
+    setGenLoading(false);
+  }
+
   return (
     <div className="space-y-4">
       <ProjectHeader projectName={projectName || "Project"} location={projectLocation || ""} />
@@ -779,6 +809,44 @@ export default function SchedulePage() {
         >
           Refresh
         </button>
+      </div>
+
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <button
+          type="button"
+          onClick={() => setShowGenerate(!showGenerate)}
+          className="text-sm font-semibold text-emerald-700"
+        >
+          {showGenerate ? "▼" : "▶"} Generate Schedule from Plans
+        </button>
+        {showGenerate && (
+          <div className="mt-3 space-y-3">
+            <div>
+              <label className="block text-xs font-medium mb-1">Start date</label>
+              <input
+                type="date"
+                value={genStartDate}
+                onChange={(e) => setGenStartDate(e.target.value)}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={generateFromPlans}
+              disabled={genLoading || !genStartDate}
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+            >
+              {genLoading ? "Generating…" : "Generate from Plans"}
+            </button>
+            {genResult && (
+              <div className="text-xs text-slate-600">
+                Generated {genResult.generated} · Saved {genResult.saved}
+                {typeof genResult.sheetsUsed === "number" && ` · Sheets used: ${genResult.sheetsUsed}`}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {error ? (
