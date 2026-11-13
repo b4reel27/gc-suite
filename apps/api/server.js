@@ -19,6 +19,7 @@ import {
 } from "./plansStore.js";
 import { enqueueAI } from "./aiQueue.js";
 import { generateScheduleFromContract, generateScheduleFromPlans } from "./scheduleFromContract.js";
+import { extractBidDeadlines } from "./bidDeadlines.js";
 
 import { v2 as cloudinary } from "cloudinary";
 import webpush from "web-push";
@@ -3718,6 +3719,23 @@ app.post("/projects/:projectId/schedule/from-plans", requireAuth, async (req, re
   } catch (e) {
     console.error(e);
     return apiError(res, 500, e.message || "Schedule generation failed");
+  }
+});
+
+
+
+app.post("/projects/:projectId/bid-deadlines", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { text } = req.body || {};
+    if (!text?.trim()) return apiError(res, 400, "text required");
+    await requireProjectMember(projectId, req.userId);
+    const items = await extractBidDeadlines({ text, enqueueAI });
+    // Optionally save as schedule items or a simple list
+    res.json({ deadlines: items });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, e.message || "Extraction failed");
   }
 });
 
