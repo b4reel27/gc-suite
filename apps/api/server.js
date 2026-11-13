@@ -3539,7 +3539,7 @@ app.post("/projects/:projectId/schedule/from-contract", requireAuth, async (req,
 app.post("/projects/:projectId/schedule/from-plans", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { startDate, projectName } = req.body || {};
+    const { startDate, endDate, projectName } = req.body || {};
     if (!startDate) return apiError(res, 400, "startDate required");
     await requireProjectMember(projectId, req.userId);
 
@@ -3553,6 +3553,7 @@ app.post("/projects/:projectId/schedule/from-plans", requireAuth, async (req, re
       items = await generateScheduleFromPlans({
         sheets: sheets.map(s => ({ sheetId: s.sheet_id, sheetNo: s.sheet_no, title: s.title, discipline: s.discipline })),
         startDate,
+        endDate,
         projectName,
         enqueueAI,
       });
