@@ -26,6 +26,30 @@ export default function ScheduleFromContractPage() {
     }
   }
 
+  async function generateFromPlans() {
+    if (!startDate) {
+      setError("Start date is required.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    setResult(null);
+    try {
+      const token = localStorage.getItem("token") || "";
+      const r = await fetch(`${API_URL}/projects/${projectId}/schedule/from-plans`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: token ? `Bearer ${token}` : "" },
+        body: JSON.stringify({ startDate, projectName }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Generation failed");
+      setResult(data);
+    } catch (e) {
+      setError(e.message || "Failed");
+    }
+    setLoading(false);
+  }
+
   async function generate() {
     if (!contractText.trim() || !startDate) {
       setError("Contract text and start date are required.");
@@ -77,13 +101,22 @@ export default function ScheduleFromContractPage() {
         <input type="file" accept=".txt,text/plain" onChange={handleFile} className="mt-1 text-xs" />
       </div>
 
-      <button
-        onClick={generate}
-        disabled={loading}
-        className="px-4 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
-      >
-        {loading ? "Generating schedule…" : "Generate Preliminary Schedule"}
-      </button>
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={generateFromPlans}
+          disabled={loading}
+          className="px-4 py-2 bg-emerald-600 text-white rounded text-sm disabled:opacity-50"
+        >
+          {loading ? "Generating…" : "Build from Plans"}
+        </button>
+        <button
+          onClick={generate}
+          disabled={loading}
+          className="px-4 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
+        >
+          {loading ? "Generating…" : "From Contract Text"}
+        </button>
+      </div>
 
       {error && <div className="text-sm text-red-600">{error}</div>}
 
