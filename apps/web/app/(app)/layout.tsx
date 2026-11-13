@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import OfflineBanner from "../../components/OfflineBanner";
+import GlobalSearch from "../../components/GlobalSearch";
+import OfflineSync from "../../components/OfflineSync";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
@@ -95,6 +97,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Brand */}
           <div className="border-b border-slate-100 px-5 py-4">
             <div className="text-lg font-extrabold tracking-tight text-slate-900">GC Suite</div>
+            <div className="mt-2 flex items-center gap-2"><GlobalSearch projectId={activeProjectId} /><OfflineSync /></div>
             <div className="mt-0.5 text-xs text-slate-400">Construction Management</div>
           </div>
 
