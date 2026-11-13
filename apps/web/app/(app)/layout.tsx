@@ -38,6 +38,7 @@ const NAV_GROUPS = [
     tabs: [
       { label: "Directory", path: "directory", icon: "👥" },
       { label: "Meetings",  path: "meetings",  icon: "🤝" },
+      { label: "Sub View",   path: "sub",       icon: "👷" },
     ],
   },
 ];
