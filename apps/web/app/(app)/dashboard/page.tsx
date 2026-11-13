@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import MobileQuickActions from "../../../components/MobileQuickActions";
 import SmartCaptureModal from "../../../components/SmartCaptureModal";
+import AIInsightsCard from "../../../components/AIInsightsCard";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const ISSUE_ROUTE = "punch";
@@ -407,7 +408,8 @@ export default function DashboardPage() {
         </>
       )}
 
-      <MobileQuickActions
+      <AIInsightsCard projectId={getActiveProjectId()} />
+          <MobileQuickActions
         actions={[
           { label: "Smart Capture", icon: "✨", highlight: true, onClick: () => setShowCapture(true) },
           { label: "Work to Complete", icon: "📸", href: projectId ? `/projects/${projectId}/${ISSUE_ROUTE}` : "#" },
