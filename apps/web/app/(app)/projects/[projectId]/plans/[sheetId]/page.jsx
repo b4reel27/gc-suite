@@ -282,14 +282,16 @@ export default function PlanViewerPage() {
           </select>
 
           {selected?.fileUrl ? (
-            <a
-              href={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => {
+                const url = `${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`;
+                window.open(url, "_blank", "noopener");
+              }}
               className="rounded-xl bg-slate-900 px-3 py-2 text-sm text-white hover:opacity-90"
             >
               Open PDF ↗
-            </a>
+            </button>
           ) : null}
         </div>
       </div>
@@ -405,11 +407,29 @@ export default function PlanViewerPage() {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         {selected?.fileUrl ? (
-          <iframe
-            title={`Plan ${plan.sheetNo} rev ${selected.rev}`}
-            src={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`}
+          <object
+            data={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}#toolbar=1&navpanes=0`}
+            type="application/pdf"
             className="h-[75vh] w-full"
-          />
+          >
+            <embed
+              src={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`}
+              type="application/pdf"
+              className="h-[75vh] w-full"
+            />
+            <div className="p-6 text-center text-sm text-slate-600">
+              PDF preview not supported in this browser.
+              <br />
+              <a
+                href={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-block text-blue-600 underline"
+              >
+                Open PDF in new tab
+              </a>
+            </div>
+          </object>
         ) : (
           <div className="p-6 text-sm text-slate-600">
             No PDF uploaded for this revision yet.
