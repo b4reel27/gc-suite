@@ -84,7 +84,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isTabActive = (path: string) => pathname?.includes(`/${path}`);
 
   return (
-    <OfflineBanner />
+    <>
+      <OfflineBanner />
       <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto flex w-full max-w-[1400px] overflow-x-hidden lg:min-h-screen">
 
@@ -282,5 +283,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       </div>
     </div>
+    </>
   );
 }
