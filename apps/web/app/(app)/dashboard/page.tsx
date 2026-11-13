@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import MobileQuickActions from "../../../components/MobileQuickActions";
 import SmartCaptureModal from "../../../components/SmartCaptureModal";
 import AIInsightsCard from "../../../components/AIInsightsCard";
+import ReportExport from "../../../components/ReportExport";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const ISSUE_ROUTE = "punch";
@@ -408,7 +409,7 @@ export default function DashboardPage() {
         </>
       )}
 
-      <AIInsightsCard projectId={getActiveProjectId()} />
+      <div className="flex items-center gap-2 mb-2"><AIInsightsCard projectId={getActiveProjectId()} /><ReportExport projectId={getActiveProjectId()} /></div>
           <MobileQuickActions
         actions={[
           { label: "Smart Capture", icon: "✨", highlight: true, onClick: () => setShowCapture(true) },
