@@ -714,12 +714,21 @@ export default function SchedulePage() {
   }
 
   async function deleteItem(itemId) {
+    if (!itemId) return;
     const ok = window.confirm("Delete this schedule item? This cannot be undone.");
     if (!ok) return;
 
     setError("");
     try {
-      await apiFetch(`/schedule-item/${itemId}`, { method: "DELETE" });
+      const token = getToken();
+      const r = await fetch(`${apiBase}/schedule-item/${itemId}`, {
+        method: "DELETE",
+        headers: { Authorization: token ? `Bearer ${token}` : "" },
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.error || `Delete failed (${r.status})`);
+      }
       setItems((prev) => (prev || []).filter((x) => x.id !== itemId));
     } catch (e) {
       setError(e?.message || "Error deleting schedule item");
