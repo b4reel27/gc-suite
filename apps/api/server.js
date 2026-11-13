@@ -2758,11 +2758,12 @@ app.post("/projects/:projectId/change-orders", requireAuth, async (req, res) => 
     const { projectId } = req.params;
     if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
     await requireProjectMember(projectId, req.userId);
-    const { title = "", amount = 0, days_impact = 0, description = "" } = req.body;
+    const { title = "", amount = 0, days_impact = 0, description = "", cost_code = null } = req.body;
+    await pool.query(`ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS cost_code TEXT`).catch(() => {});
     const { rows } = await pool.query(
-      `INSERT INTO change_orders(project_id,title,amount,days_impact,description)
-       VALUES($1,$2,$3,$4,$5) RETURNING *`,
-      [projectId, title, amount, days_impact, description]
+      `INSERT INTO change_orders(project_id,title,amount,days_impact,description,cost_code)
+       VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [projectId, title, amount, days_impact, description, cost_code]
     );
     res.status(201).json(rows[0]);
   } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
@@ -3046,11 +3047,14 @@ app.post("/projects/:projectId/rfis", requireAuth, async (req, res) => {
     const { title, question, to_name, due_date } = req.body || {};
     if (!title?.trim()) return apiError(res, 400, "title required");
     if (!question?.trim()) return apiError(res, 400, "question required");
+
+    // Ensure sequence exists
+    await pool.query(`CREATE SEQUENCE IF NOT EXISTS rfis_rfi_number_seq`).catch(() => {});
     const { rows } = await pool.query(
-      `INSERT INTO rfis (project_id, created_by_user_id, title, question, to_name, due_date)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [projectId, req.userId, title.trim(), question.trim(), to_name?.trim() || null,
-       due_date || null]
+      `INSERT INTO rfis (project_id, created_by_user_id, title, question, to_name, due_date, rfi_number)
+       VALUES ($1,$2,$3,$4,$5,$6, COALESCE((SELECT MAX(rfi_number) FROM rfis WHERE project_id=$1), 0) + 1)
+       RETURNING *`,
+      [projectId, req.userId, title.trim(), question.trim(), to_name?.trim() || null, due_date || null]
     );
     res.status(201).json(rows[0]);
   } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
