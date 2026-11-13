@@ -16,6 +16,7 @@ const NAV_GROUPS = [
       { label: "Plans",      path: "plans",      icon: "📐" },
       { label: "Work to Complete", path: "punch", icon: "⚠️" },
       { label: "Schedule",   path: "schedule",   icon: "📅" },
+      { label: "From Contract", path: "schedule/from-contract", icon: "📄" },
       { label: "Daily Log",  path: "daily-log",  icon: "📝" },
       { label: "Forms / JSA",path: "forms",      icon: "📋" },
     ],
