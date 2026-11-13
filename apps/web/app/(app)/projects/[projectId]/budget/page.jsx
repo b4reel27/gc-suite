@@ -67,6 +67,7 @@ export default function BudgetPage() {
   const { projectId } = useParams();
 
   const [items, setItems] = useState([]);
+  const [totalExecutedCOs, setTotalExecutedCOs] = useState(0);
   const [totals, setTotals] = useState({ original: 0, approved_co: 0, committed: 0, actual: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -142,6 +143,7 @@ export default function BudgetPage() {
   async function loadBudget() {
     const res = await apiFetch(`/projects/${projectId}/budget`);
     setItems(Array.isArray(res) ? res : res?.items || []);
+    if (res?.totalExecutedCOs != null) setTotalExecutedCOs(res.totalExecutedCOs);
     if (res?.totals) setTotals(res.totals);
   }
 
