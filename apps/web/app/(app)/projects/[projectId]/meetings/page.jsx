@@ -982,7 +982,7 @@ export default function MeetingsPage() {
               ) : sortedMeetings.map((m) => (
                 <tr key={m.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}>
                   <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
-                    {m.meeting_date ? new Date(m.meeting_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                    {m.meeting_date ? formatDate(m.meeting_date) : "—"}
                   </td>
                   <td className="px-4 py-3">
                     <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">{m.meeting_type || "—"}</span>
