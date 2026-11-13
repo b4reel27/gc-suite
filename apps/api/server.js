@@ -3561,7 +3561,6 @@ app.post("/projects/:projectId/schedule/from-plans", requireAuth, async (req, re
       console.error("AI schedule error", aiErr);
     }
     if (!items.length) {
-      // Fallback generic sequence so the user always gets something
       items = [
         { title: "Site work & demolition", trade: "Site", duration_days: 10, start_offset_days: 0 },
         { title: "Foundations", trade: "Concrete", duration_days: 14, start_offset_days: 8 },
@@ -3571,6 +3570,22 @@ app.post("/projects/:projectId/schedule/from-plans", requireAuth, async (req, re
         { title: "Interior finishes", trade: "Finishes", duration_days: 18, start_offset_days: 48 },
         { title: "Final inspections & closeout", trade: "General", duration_days: 7, start_offset_days: 62 },
       ];
+    }
+    // Force scale to end date if provided
+    if (endDate && items.length) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const totalDays = Math.max(1, Math.round((end - start) / 86400000));
+      let maxEnd = 0;
+      for (const it of items) maxEnd = Math.max(maxEnd, (it.start_offset_days || 0) + (it.duration_days || 1));
+      if (maxEnd > 0) {
+        const scale = totalDays / maxEnd;
+        items = items.map(it => ({
+          ...it,
+          start_offset_days: Math.round((it.start_offset_days || 0) * scale),
+          duration_days: Math.max(1, Math.round((it.duration_days || 1) * scale)),
+        }));
+      }
     }
 
     const created = [];
