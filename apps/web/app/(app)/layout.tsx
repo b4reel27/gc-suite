@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import OfflineBanner from "../../components/OfflineBanner";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
@@ -83,7 +84,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isTabActive = (path: string) => pathname?.includes(`/${path}`);
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
+    <OfflineBanner />
+      <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto flex w-full max-w-[1400px] overflow-x-hidden lg:min-h-screen">
 
         {/* ── Desktop Sidebar ────────────────────────────────────────────── */}
