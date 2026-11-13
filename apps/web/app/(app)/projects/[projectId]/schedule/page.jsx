@@ -431,6 +431,7 @@ export default function SchedulePage() {
   const [error, setError] = useState("");
   const [showGenerate, setShowGenerate] = useState(false);
   const [genStartDate, setGenStartDate] = useState("");
+  const [genEndDate, setGenEndDate] = useState("");
   const [genLoading, setGenLoading] = useState(false);
   const [genResult, setGenResult] = useState(null);
 
@@ -781,7 +782,7 @@ export default function SchedulePage() {
       const r = await fetch(`${apiBase}/projects/${projectId}/schedule/from-plans`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: token ? `Bearer ${token}` : "" },
-        body: JSON.stringify({ startDate: genStartDate }),
+        body: JSON.stringify({ startDate: genStartDate, endDate: genEndDate || undefined }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || "Generation failed");
@@ -831,14 +832,25 @@ export default function SchedulePage() {
         </button>
         {showGenerate && (
           <div className="mt-3 space-y-3">
-            <div>
-              <label className="block text-xs font-medium mb-1">Start date</label>
-              <input
-                type="date"
-                value={genStartDate}
-                onChange={(e) => setGenStartDate(e.target.value)}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-              />
+            <div className="flex gap-3 flex-wrap">
+              <div>
+                <label className="block text-xs font-medium mb-1">Start date</label>
+                <input
+                  type="date"
+                  value={genStartDate}
+                  onChange={(e) => setGenStartDate(e.target.value)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Target end date (optional)</label>
+                <input
+                  type="date"
+                  value={genEndDate}
+                  onChange={(e) => setGenEndDate(e.target.value)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                />
+              </div>
             </div>
             <button
               type="button"
