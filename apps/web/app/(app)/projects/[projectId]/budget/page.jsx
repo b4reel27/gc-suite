@@ -169,18 +169,27 @@ export default function BudgetPage() {
 
   // Computed totals from items when server totals aren't available
   const computedTotals = useMemo(() => {
-    const t = {
-      original: Number(totals?.original) || 0,
-      approved_co: Number(totals?.approved_co) || 0,
-      committed: Number(totals?.committed) || 0,
-      actual: Number(totals?.actual) || 0,
-    };
-    if (t.original === 0 && t.approved_co === 0 && items.length) {
-      t.original = items.reduce((s, it) => s + (Number(it.original_amount) || 0), 0);
-      t.approved_co = items.reduce((s, it) => s + (Number(it.approved_co_amount) || 0), 0);
-      t.committed = items.reduce((s, it) => s + (Number(it.committed_amount) || 0), 0);
-      t.actual = items.reduce((s, it) => s + (Number(it.actual_cost) || 0), 0);
+    // Prefer server-computed totals when available
+    if (totals && (totals.revised || totals.projected || totals.approvedCO)) {
+      return {
+        original: Number(totals.original) || 0,
+        approved_co: Number(totals.approvedCO) || 0,
+        committed: Number(totals.committed) || 0,
+        actual: Number(totals.actual) || 0,
+        revised: Number(totals.revised) || 0,
+        projected: Number(totals.projected) || 0,
+        pending: Number(totals.pending) || 0,
+      };
     }
+    const t = {
+      original: items.reduce((s, it) => s + (Number(it.original_amount) || 0), 0),
+      approved_co: items.reduce((s, it) => s + (Number(it.approved_co_amount) || 0), 0),
+      committed: items.reduce((s, it) => s + (Number(it.committed_amount) || 0), 0),
+      actual: items.reduce((s, it) => s + (Number(it.actual_cost) || 0), 0),
+    };
+    t.revised = t.original + t.approved_co;
+    t.projected = Math.max(t.revised, t.committed, t.actual);
+    t.pending = items.reduce((s, it) => s + (Number(it.pending_exposure) || 0), 0);
     return t;
   }, [totals, items]);
 
@@ -306,8 +315,10 @@ export default function BudgetPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard title="Original Contract" value={fmtDollars(computedTotals.original)} />
         <StatCard title="Approved COs" value={fmtDollars(computedTotals.approved_co)} />
-        <StatCard title="Revised Contract" value={fmtDollars(revisedContract)} />
-        <StatCard title="Variance" value={fmtDollars(variance)} danger={variance < 0} />
+        <StatCard title="Revised Contract" value={fmtDollars(computedTotals.revised || revisedContract)} />
+        <StatCard title="Projected Final" value={fmtDollars(computedTotals.projected || 0)} />
+        <StatCard title="Pending Exposure" value={fmtDollars(computedTotals.pending || 0)} />
+        <StatCard title="Over / Under" value={fmtDollars((computedTotals.revised || revisedContract) - (computedTotals.projected || 0))} danger={(computedTotals.projected || 0) > (computedTotals.revised || revisedContract)} />
       </div>
 
       {/* Add line item */}
