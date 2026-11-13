@@ -2629,7 +2629,22 @@ app.get("/projects/:projectId/budget", requireAuth, async (req, res) => {
       `SELECT * FROM budget_items WHERE project_id=$1 ORDER BY created_at ASC`,
       [projectId]
     );
-    res.json(rows);
+    // Sum executed COs by cost_code
+    await pool.query(`ALTER TABLE change_orders ADD COLUMN IF NOT EXISTS cost_code TEXT`).catch(() => {});
+    const { rows: cos } = await pool.query(
+      `SELECT cost_code, COALESCE(SUM(amount),0) AS total
+       FROM change_orders
+       WHERE project_id=$1 AND status='EXECUTED'
+       GROUP BY cost_code`,
+      [projectId]
+    );
+    const coByCode = Object.fromEntries(cos.map(c => [c.cost_code || "", Number(c.total)]));
+    const totalExecuted = cos.reduce((s, c) => s + Number(c.total), 0);
+    const enhanced = rows.map(r => ({
+      ...r,
+      approved_co_amount: coByCode[r.cost_code] || 0,
+    }));
+    res.json({ items: enhanced, totalExecutedCOs: totalExecuted });
   } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
 
@@ -2985,11 +3000,24 @@ app.post("/projects/:projectId/observations", requireAuth, async (req, res) => {
     const { projectId } = req.params;
     if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
     await requireProjectMember(projectId, req.userId);
-    const { obs_type = "GENERAL", title = "", location = "", trade = "", priority = "Medium", description = "", photo_url = "" } = req.body;
+    const { obs_type = "GENERAL", title = "", location = "", trade = "", priority = "Medium", description = "", photo_url = "" } = req.body || {};
+    await pool.query(`CREATE TABLE IF NOT EXISTS observations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      obs_type TEXT NOT NULL DEFAULT 'GENERAL',
+      title TEXT NOT NULL DEFAULT '',
+      location TEXT NOT NULL DEFAULT '',
+      trade TEXT NOT NULL DEFAULT '',
+      priority TEXT NOT NULL DEFAULT 'Medium',
+      status TEXT NOT NULL DEFAULT 'OPEN',
+      description TEXT NOT NULL DEFAULT '',
+      photo_url TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`).catch(() => {});
     const { rows } = await pool.query(
       `INSERT INTO observations(project_id,obs_type,title,location,trade,priority,description,photo_url)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [projectId, obs_type, title, location, trade, priority, description, photo_url]
+      [projectId, obs_type, title || "", location || "", trade || "", priority || "Medium", description || "", photo_url || ""]
     );
     res.status(201).json(rows[0]);
   } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
@@ -3235,15 +3263,28 @@ app.post("/projects/:projectId/submittals", requireAuth, async (req, res) => {
     if (!isUuid(projectId)) return apiError(res, 400, "Invalid projectId");
     await requireProjectMember(projectId, req.userId);
     const { spec_section, title, submittal_type, submitted_by, submitted_date, status, notes } = req.body || {};
-    if (!title) return apiError(res, 400, "title required");
+    if (!title?.trim()) return apiError(res, 400, "title required");
     const validTypes = ["Shop Drawing","Sample","Product Data","O&M Manual","Other"];
     const validStatuses = ["Required","Submitted","Under Review","Approved","Rejected"];
+    await pool.query(`CREATE TABLE IF NOT EXISTS submittals (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      created_by_user_id UUID REFERENCES users(id),
+      spec_section TEXT,
+      title TEXT NOT NULL,
+      submittal_type TEXT NOT NULL DEFAULT 'Shop Drawing',
+      submitted_by TEXT,
+      submitted_date DATE,
+      status TEXT NOT NULL DEFAULT 'Required',
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`).catch(() => {});
     const { rows } = await pool.query(
       `INSERT INTO submittals (project_id, created_by_user_id, spec_section, title, submittal_type, submitted_by, submitted_date, status, notes)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [projectId, req.userId, spec_section || null, title,
+      [projectId, req.userId, spec_section || null, title.trim(),
        validTypes.includes(submittal_type) ? submittal_type : "Shop Drawing",
-       submitted_by || null, normalizeDateInput(submitted_date),
+       submitted_by || null, submitted_date || null,
        validStatuses.includes(status) ? status : "Required", notes || null]
     );
     res.status(201).json(rows[0]);
