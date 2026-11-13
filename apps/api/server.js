@@ -17,6 +17,7 @@ import {
   approveRevision,
   supersedeRevision,
 } from "./plansStore.js";
+import { enqueueAI } from "./aiQueue.js";
 
 import { v2 as cloudinary } from "cloudinary";
 import webpush from "web-push";
@@ -3433,6 +3434,54 @@ app.delete("/projects/:projectId/plans/:sheetId/annotation", requireAuth, async 
   } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
 
+
+// ─── Additional AI endpoints (rate-limited via queue) ─────────────────────────
+app.post("/ai/summarize-daily", requireAuth, async (req, res) => {
+  try {
+    const { entries } = req.body || {};
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return apiError(res, 503, "AI not configured");
+    const text = (entries || []).map(e => e.note || e.title || JSON.stringify(e)).join("\n");
+    const prompt = `Summarize these construction daily log entries into 3-5 concise bullet points for the superintendent. Be factual.\n\n${text.slice(0, 4000)}`;
+    const result = await enqueueAI(async () => {
+      const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 500 } })
+      });
+      const data = await r.json();
+      return data?.candidates?.[0]?.content?.parts?.[0]?.text || "No summary generated";
+    });
+    res.json({ summary: result });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Summarize failed");
+  }
+});
+
+app.post("/ai/draft-rfi", requireAuth, async (req, res) => {
+  try {
+    const { context } = req.body || {};
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return apiError(res, 503, "AI not configured");
+    const prompt = `Draft a professional RFI (Request for Information) for a construction project based on this context. Include Subject, Question, and Background. Keep it concise.\n\nContext: ${String(context || "").slice(0, 2000)}`;
+    const result = await enqueueAI(async () => {
+      const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 600 } })
+      });
+      const data = await r.json();
+      return data?.candidates?.[0]?.content?.parts?.[0]?.text || "Could not draft RFI";
+    });
+    res.json({ draft: result });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "RFI draft failed");
+  }
+});
+
+
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({ error: err.message || "Server error" });
@@ -3479,11 +3528,11 @@ Example: issue|Door dragging North Entry|Glazing|North Entry|Medium|null|null`;
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
     const geminiHeaders = { "Content-Type": "application/json", "x-goog-api-key": key };
 
-    let r = await fetch(geminiUrl, { method: "POST", headers: geminiHeaders, body: geminiBody });
+    let r = await enqueueAI(() => fetch(geminiUrl, { method: "POST", headers: geminiHeaders, body: geminiBody }));
 
     if (r.status === 429) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      r = await fetch(geminiUrl, { method: "POST", headers: geminiHeaders, body: geminiBody });
+      r = await enqueueAI(() => fetch(geminiUrl, { method: "POST", headers: geminiHeaders, body: geminiBody }));
     }
 
     if (!r.ok) {
