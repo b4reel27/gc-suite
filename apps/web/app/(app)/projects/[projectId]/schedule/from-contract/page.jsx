@@ -122,7 +122,13 @@ export default function ScheduleFromContractPage() {
 
       {result && (
         <div className="border rounded p-3 bg-slate-50">
-          <div className="text-sm font-medium mb-2">Generated {result.generated} tasks · Saved {result.saved}</div>
+          <div className="text-sm font-medium mb-1">Generated {result.generated} tasks · Saved {result.saved}</div>
+          {typeof result.sheetsUsed === "number" && (
+            <div className="text-xs text-slate-500 mb-2">Sheets found in project: {result.sheetsUsed}</div>
+          )}
+          {result.generated === 0 && (
+            <div className="text-xs text-amber-700 mb-2">No tasks returned. Check that the backend is updated and Gemini is responding.</div>
+          )}
           <ul className="text-xs space-y-1 max-h-64 overflow-auto">
             {(result.items || []).map((item, i) => (
               <li key={i}>
