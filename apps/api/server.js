@@ -21,6 +21,7 @@ import { enqueueAI } from "./aiQueue.js";
 import { generateScheduleFromContract, generateScheduleFromPlans } from "./scheduleFromContract.js";
 import { extractBidDeadlines } from "./bidDeadlines.js";
 import { levelQuotes } from "./bidLeveling.js";
+import { checkScheduleRisk } from "./scheduleRisk.js";
 
 import { v2 as cloudinary } from "cloudinary";
 import webpush from "web-push";
@@ -3753,6 +3754,64 @@ app.post("/projects/:projectId/bid-leveling", requireAuth, async (req, res) => {
   } catch (e) {
     console.error(e);
     return apiError(res, 500, e.message || "Leveling failed");
+  }
+});
+
+
+
+app.get("/projects/:projectId/schedule-risk", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    await requireProjectMember(projectId, req.userId);
+    const [subs, rfis, sched] = await Promise.all([
+      pool.query(`SELECT title, status, submitted_date FROM submittals WHERE project_id=$1 AND status NOT IN ('Approved','Rejected') LIMIT 20`, [projectId]),
+      pool.query(`SELECT title, status, due_date FROM rfis WHERE project_id=$1 AND status='OPEN' LIMIT 20`, [projectId]),
+      pool.query(`SELECT title, date, start_at, end_at, status FROM schedule_items WHERE project_id=$1 ORDER BY COALESCE(start_at, date) LIMIT 30`, [projectId]),
+    ]);
+    const result = await checkScheduleRisk({
+      submittals: subs.rows,
+      rfis: rfis.rows,
+      scheduleItems: sched.rows,
+      enqueueAI,
+    });
+    res.json(result);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, e.message || "Risk check failed");
+  }
+});
+
+app.post("/projects/:projectId/weekly-report", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    await requireProjectMember(projectId, req.userId);
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return apiError(res, 503, "AI not configured");
+    const [proj, issues, rfis, cos] = await Promise.all([
+      pool.query(`SELECT name, location FROM projects WHERE id=$1`, [projectId]),
+      pool.query(`SELECT title, status FROM issues WHERE project_id=$1 AND status!='CLOSED' LIMIT 10`, [projectId]),
+      pool.query(`SELECT title, status FROM rfis WHERE project_id=$1 AND status='OPEN' LIMIT 10`, [projectId]),
+      pool.query(`SELECT title, amount, status FROM change_orders WHERE project_id=$1 LIMIT 10`, [projectId]),
+    ]);
+    const p = proj.rows[0] || {};
+    const prompt = `Draft a short weekly owner/architect report for ${p.name || "the project"} (${p.location || ""}).
+Open issues: ${JSON.stringify(issues.rows)}
+Open RFIs: ${JSON.stringify(rfis.rows)}
+Change orders: ${JSON.stringify(cos.rows)}
+Cover schedule status, open items, and look-ahead. Be concise and professional. No placeholders.`;
+    const draft = await enqueueAI(async () => {
+      const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 800 } })
+      });
+      const data = await r.json();
+      return data?.candidates?.[0]?.content?.parts?.[0]?.text || "Could not draft report";
+    });
+    res.json({ draft });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, e.message || "Report failed");
   }
 });
 
