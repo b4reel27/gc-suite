@@ -17,6 +17,7 @@ const NAV_GROUPS = [
       { label: "Work to Complete", path: "punch", icon: "⚠️" },
       { label: "Schedule",   path: "schedule",   icon: "📅" },
       { label: "Bid Deadlines", path: "bid-deadlines", icon: "📅" },
+      { label: "Bid Leveling", path: "bid-leveling", icon: "📊" },
             { label: "Daily Log",  path: "daily-log",  icon: "📝" },
       { label: "Forms / JSA",path: "forms",      icon: "📋" },
     ],
@@ -245,6 +246,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {[
                   { label: "Schedule",      path: `projects/${activeProjectId}/schedule` },
                   { label: "Bid Deadlines", path: `projects/${activeProjectId}/bid-deadlines` },
+                  { label: "Bid Leveling", path: `projects/${activeProjectId}/bid-leveling` },
                                     { label: "Forms / JSA",   path: `projects/${activeProjectId}/forms` },
                   { label: "RFIs",          path: `projects/${activeProjectId}/rfis` },
                   { label: "Submittals",    path: `projects/${activeProjectId}/submittals` },
