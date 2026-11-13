@@ -244,6 +244,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="grid grid-cols-3 divide-x divide-slate-100">
                 {[
                   { label: "Schedule",      path: `projects/${activeProjectId}/schedule` },
+                  { label: "From Contract", path: `projects/${activeProjectId}/schedule/from-contract` },
                   { label: "Forms / JSA",   path: `projects/${activeProjectId}/forms` },
                   { label: "RFIs",          path: `projects/${activeProjectId}/rfis` },
                   { label: "Submittals",    path: `projects/${activeProjectId}/submittals` },
