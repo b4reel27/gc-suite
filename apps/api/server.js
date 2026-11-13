@@ -20,6 +20,7 @@ import {
 import { enqueueAI } from "./aiQueue.js";
 import { generateScheduleFromContract, generateScheduleFromPlans } from "./scheduleFromContract.js";
 import { extractBidDeadlines } from "./bidDeadlines.js";
+import { levelQuotes } from "./bidLeveling.js";
 
 import { v2 as cloudinary } from "cloudinary";
 import webpush from "web-push";
@@ -3736,6 +3737,22 @@ app.post("/projects/:projectId/bid-deadlines", requireAuth, async (req, res) => 
   } catch (e) {
     console.error(e);
     return apiError(res, 500, e.message || "Extraction failed");
+  }
+});
+
+
+
+app.post("/projects/:projectId/bid-leveling", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { quotes, division } = req.body || {};
+    if (!quotes?.length) return apiError(res, 400, "quotes required");
+    await requireProjectMember(projectId, req.userId);
+    const result = await levelQuotes({ quotes, division, enqueueAI });
+    res.json(result);
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, e.message || "Leveling failed");
   }
 });
 
