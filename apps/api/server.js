@@ -18,7 +18,7 @@ import {
   supersedeRevision,
 } from "./plansStore.js";
 import { enqueueAI } from "./aiQueue.js";
-import { generateScheduleFromContract } from "./scheduleFromContract.js";
+import { generateScheduleFromContract, generateScheduleFromPlans } from "./scheduleFromContract.js";
 
 import { v2 as cloudinary } from "cloudinary";
 import webpush from "web-push";
@@ -3516,6 +3516,49 @@ app.post("/projects/:projectId/schedule/from-contract", requireAuth, async (req,
     }
 
     res.json({ generated: items.length, saved: created.length, items, created });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, e.message || "Schedule generation failed");
+  }
+});
+
+
+
+app.post("/projects/:projectId/schedule/from-plans", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { startDate, projectName } = req.body || {};
+    if (!startDate) return apiError(res, 400, "startDate required");
+    await requireProjectMember(projectId, req.userId);
+
+    const { rows: sheets } = await pool.query(
+      `SELECT sheet_id, sheet_no, title, discipline FROM plan_sheets WHERE project_id = $1 ORDER BY sheet_no NULLS LAST`,
+      [projectId]
+    );
+
+    const items = await generateScheduleFromPlans({
+      sheets: sheets.map(s => ({ sheetId: s.sheet_id, sheetNo: s.sheet_no, title: s.title, discipline: s.discipline })),
+      startDate,
+      projectName,
+      enqueueAI,
+    });
+
+    const created = [];
+    for (const item of items) {
+      const start = new Date(startDate);
+      start.setDate(start.getDate() + (item.start_offset_days || 0));
+      const end = new Date(start);
+      end.setDate(end.getDate() + (item.duration_days || 1));
+      const { rows } = await pool.query(
+        `INSERT INTO schedule_items (project_id, title, trade, start_date, end_date, notes, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'PLANNED')
+         RETURNING id, title, start_date, end_date`,
+        [projectId, item.title || "Task", item.trade || null, start.toISOString().slice(0,10), end.toISOString().slice(0,10), item.notes || null]
+      ).catch(() => ({ rows: [] }));
+      if (rows[0]) created.push(rows[0]);
+    }
+
+    res.json({ generated: items.length, saved: created.length, items, created, sheetsUsed: sheets.length });
   } catch (e) {
     console.error(e);
     return apiError(res, 500, e.message || "Schedule generation failed");
