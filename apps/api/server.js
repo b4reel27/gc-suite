@@ -3506,12 +3506,24 @@ app.post("/projects/:projectId/schedule/from-contract", requireAuth, async (req,
       start.setDate(start.getDate() + (item.start_offset_days || 0));
       const end = new Date(start);
       end.setDate(end.getDate() + (item.duration_days || 1));
+      const startDateStr = start.toISOString().slice(0, 10);
+      const endDateStr = end.toISOString().slice(0, 10);
       const { rows } = await pool.query(
-        `INSERT INTO schedule_items (project_id, title, trade, start_date, end_date, notes, status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'PLANNED')
-         RETURNING id, title, start_date, end_date`,
-        [projectId, item.title || "Task", item.trade || null, start.toISOString().slice(0,10), end.toISOString().slice(0,10), item.notes || null]
-      ).catch(() => ({ rows: [] }));
+        `INSERT INTO schedule_items
+           (project_id, title, date, start_at, end_at, due_date, notes, status, created_by_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'OPEN', $8)
+         RETURNING id, title, date`,
+        [
+          projectId,
+          item.title || "Task",
+          startDateStr,
+          start.toISOString(),
+          end.toISOString(),
+          endDateStr,
+          [item.trade, item.notes].filter(Boolean).join(" — ") || null,
+          req.userId,
+        ]
+      ).catch((err) => { console.error("schedule insert error", err); return { rows: [] }; });
       if (rows[0]) created.push(rows[0]);
     }
 
@@ -3566,12 +3578,24 @@ app.post("/projects/:projectId/schedule/from-plans", requireAuth, async (req, re
       start.setDate(start.getDate() + (item.start_offset_days || 0));
       const end = new Date(start);
       end.setDate(end.getDate() + (item.duration_days || 1));
+      const startDateStr = start.toISOString().slice(0, 10);
+      const endDateStr = end.toISOString().slice(0, 10);
       const { rows } = await pool.query(
-        `INSERT INTO schedule_items (project_id, title, trade, start_date, end_date, notes, status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'PLANNED')
-         RETURNING id, title, start_date, end_date`,
-        [projectId, item.title || "Task", item.trade || null, start.toISOString().slice(0,10), end.toISOString().slice(0,10), item.notes || null]
-      ).catch(() => ({ rows: [] }));
+        `INSERT INTO schedule_items
+           (project_id, title, date, start_at, end_at, due_date, notes, status, created_by_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'OPEN', $8)
+         RETURNING id, title, date`,
+        [
+          projectId,
+          item.title || "Task",
+          startDateStr,
+          start.toISOString(),
+          end.toISOString(),
+          endDateStr,
+          [item.trade, item.notes].filter(Boolean).join(" — ") || null,
+          req.userId,
+        ]
+      ).catch((err) => { console.error("schedule insert error", err); return { rows: [] }; });
       if (rows[0]) created.push(rows[0]);
     }
 
