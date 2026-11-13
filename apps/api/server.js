@@ -2707,11 +2707,22 @@ app.put("/change-event/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isUuid(id)) return apiError(res, 400, "Invalid id");
-    const { title, reason, status, potential_impact, days_impact, description } = req.body;
+    const { title, reason, status, potential_impact, days_impact, description } = req.body || {};
+    // Support status-only updates (approve / reject buttons)
+    if (status && title === undefined && reason === undefined && potential_impact === undefined) {
+      const { rows } = await pool.query(
+        `UPDATE change_events SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *`,
+        [status, id]
+      );
+      if (!rows.length) return apiError(res, 404, "Not found");
+      return res.json(rows[0]);
+    }
     const { rows } = await pool.query(
-      `UPDATE change_events SET title=$1,reason=$2,status=$3,potential_impact=$4,days_impact=$5,
-       description=$6,updated_at=NOW() WHERE id=$7 RETURNING *`,
-      [title, reason, status, potential_impact, days_impact, description, id]
+      `UPDATE change_events SET title=COALESCE($1, title), reason=COALESCE($2, reason),
+       status=COALESCE($3, status), potential_impact=COALESCE($4, potential_impact),
+       days_impact=COALESCE($5, days_impact), description=COALESCE($6, description),
+       updated_at=NOW() WHERE id=$7 RETURNING *`,
+      [title ?? null, reason ?? null, status ?? null, potential_impact ?? null, days_impact ?? null, description ?? null, id]
     );
     if (!rows.length) return apiError(res, 404, "Not found");
     res.json(rows[0]);
@@ -2761,12 +2772,23 @@ app.put("/change-order/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isUuid(id)) return apiError(res, 400, "Invalid id");
-    const { title, status, amount, days_impact, description } = req.body;
+    const { title, status, amount, days_impact, description } = req.body || {};
+    if (status && title === undefined && amount === undefined) {
+      const executed_at = status === "EXECUTED" ? "NOW()" : "NULL";
+      const { rows } = await pool.query(
+        `UPDATE change_orders SET status=$1, executed_at=${executed_at}, updated_at=NOW() WHERE id=$2 RETURNING *`,
+        [status, id]
+      );
+      if (!rows.length) return apiError(res, 404, "Not found");
+      return res.json(rows[0]);
+    }
     const executed_at = status === "EXECUTED" ? "NOW()" : "NULL";
     const { rows } = await pool.query(
-      `UPDATE change_orders SET title=$1,status=$2,amount=$3,days_impact=$4,
-       description=$5,executed_at=${executed_at},updated_at=NOW() WHERE id=$6 RETURNING *`,
-      [title, status, amount, days_impact, description, id]
+      `UPDATE change_orders SET title=COALESCE($1, title), status=COALESCE($2, status),
+       amount=COALESCE($3, amount), days_impact=COALESCE($4, days_impact),
+       description=COALESCE($5, description), executed_at=${executed_at}, updated_at=NOW()
+       WHERE id=$6 RETURNING *`,
+      [title ?? null, status ?? null, amount ?? null, days_impact ?? null, description ?? null, id]
     );
     if (!rows.length) return apiError(res, 404, "Not found");
     res.json(rows[0]);
