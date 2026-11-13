@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import PdfCanvasViewer from "../../../../../../components/PdfCanvasViewer";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
@@ -407,29 +408,13 @@ export default function PlanViewerPage() {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         {selected?.fileUrl ? (
-          <object
-            data={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}#toolbar=1&navpanes=0`}
-            type="application/pdf"
-            className="h-[75vh] w-full"
-          >
-            <embed
-              src={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`}
-              type="application/pdf"
-              className="h-[75vh] w-full"
-            />
-            <div className="p-6 text-center text-sm text-slate-600">
-              PDF preview not supported in this browser.
-              <br />
-              <a
-                href={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-block text-blue-600 underline"
-              >
-                Open PDF in new tab
-              </a>
-            </div>
-          </object>
+          <PdfCanvasViewer
+            pdfUrl={`${apiBase()}/projects/${projectId}/plans/${encodeURIComponent(sheetId)}/pdf?rev=${encodeURIComponent(selected.rev)}&token=${encodeURIComponent(getToken())}`}
+            onPinDrop={(pos) => {
+              const note = prompt("Pin note (creates issue):");
+              if (note) alert("Pin at " + pos.x.toFixed(1) + "%, " + pos.y.toFixed(1) + "% — wire to issue create next.");
+            }}
+          />
         ) : (
           <div className="p-6 text-sm text-slate-600">
             No PDF uploaded for this revision yet.
