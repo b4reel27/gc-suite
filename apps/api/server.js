@@ -3532,7 +3532,7 @@ app.post("/ai/draft-rfi", requireAuth, async (req, res) => {
     const { context } = req.body || {};
     const key = process.env.GEMINI_API_KEY;
     if (!key) return apiError(res, 503, "AI not configured");
-    const prompt = `Draft a professional RFI (Request for Information) for a construction project based on this context. Include Subject, Question, and Background. Keep it concise.\n\nContext: ${String(context || "").slice(0, 2000)}`;
+    const prompt = `Draft a professional construction RFI. Use the project name and details from the context. Do NOT use placeholders like [Insert RFI Number] or [Insert Project Name]. Write concrete text.\n\nContext: ${String(context || "").slice(0, 2000)}`;
     const result = await enqueueAI(async () => {
       const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
         method: "POST",
