@@ -2640,11 +2640,43 @@ app.get("/projects/:projectId/budget", requireAuth, async (req, res) => {
     );
     const coByCode = Object.fromEntries(cos.map(c => [c.cost_code || "", Number(c.total)]));
     const totalExecuted = cos.reduce((s, c) => s + Number(c.total), 0);
-    const enhanced = rows.map(r => ({
-      ...r,
-      approved_co_amount: coByCode[r.cost_code] || 0,
-    }));
-    res.json({ items: enhanced, totalExecutedCOs: totalExecuted });
+    // Pending COs
+    const { rows: pending } = await pool.query(
+      `SELECT cost_code, COALESCE(SUM(amount),0) AS total
+       FROM change_orders
+       WHERE project_id=$1 AND status IN ('PENDING_OWNER','SUBMITTED','DRAFT')
+       GROUP BY cost_code`,
+      [projectId]
+    ).catch(() => ({ rows: [] }));
+    const pendingByCode = Object.fromEntries(pending.map(c => [c.cost_code || "", Number(c.total)]));
+
+    const enhanced = rows.map(r => {
+      const approvedCO = coByCode[r.cost_code] || Number(r.approved_co_amount) || 0;
+      const original = Number(r.original_amount) || 0;
+      const revised = original + approvedCO;
+      const committed = Number(r.committed_amount) || 0;
+      const actual = Number(r.actual_cost) || 0;
+      const projected = Math.max(revised, committed, actual);
+      const pendingExp = pendingByCode[r.cost_code] || 0;
+      return {
+        ...r,
+        approved_co_amount: approvedCO,
+        revised,
+        projected_final: projected,
+        over_under: revised - projected,
+        pending_exposure: pendingExp,
+      };
+    });
+    const totals = enhanced.reduce((acc, r) => ({
+      original: acc.original + Number(r.original_amount || 0),
+      approvedCO: acc.approvedCO + Number(r.approved_co_amount || 0),
+      revised: acc.revised + Number(r.revised || 0),
+      committed: acc.committed + Number(r.committed_amount || 0),
+      actual: acc.actual + Number(r.actual_cost || 0),
+      projected: acc.projected + Number(r.projected_final || 0),
+      pending: acc.pending + Number(r.pending_exposure || 0),
+    }), { original: 0, approvedCO: 0, revised: 0, committed: 0, actual: 0, projected: 0, pending: 0 });
+    res.json({ items: enhanced, totals, totalExecutedCOs: totalExecuted });
   } catch (e) { console.error(e); return handleThrownAccessError(res, e); }
 });
 
