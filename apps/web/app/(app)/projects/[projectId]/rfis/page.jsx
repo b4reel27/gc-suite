@@ -355,6 +355,7 @@ export default function RfisPage() {
 
   const [view, setView]               = useState("list"); // "list" | "new" | "detail"
   const [rfis, setRfis]               = useState([]);
+  const [loading, setLoading]         = useState(true);
   const [activeRfi, setActiveRfi]     = useState(null);
   const [me, setMe]                   = useState(null);
   const [projectName, setProjectName] = useState("");
@@ -388,6 +389,7 @@ export default function RfisPage() {
     let cancelled = false;
     async function load() {
       setLoadError("");
+      setLoading(true);
       try {
         const projects = await apiFetch("/projects");
         const p = projects.find((x) => x.id === projectId);
@@ -400,6 +402,8 @@ export default function RfisPage() {
         if (!cancelled) setRfis(Array.isArray(rows) ? rows : []);
       } catch (e) {
         if (!cancelled) setLoadError(e?.message || "Failed to load");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
     if (projectId) load();
