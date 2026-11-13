@@ -22,6 +22,8 @@ import { generateScheduleFromContract, generateScheduleFromPlans } from "./sched
 import { extractBidDeadlines } from "./bidDeadlines.js";
 import { levelQuotes } from "./bidLeveling.js";
 import { checkScheduleRisk } from "./scheduleRisk.js";
+import { draftDailyFromText } from "./voiceDaily.js";
+import { createSubToken, verifySubToken } from "./subPortal.js";
 
 import { v2 as cloudinary } from "cloudinary";
 import webpush from "web-push";
@@ -3812,6 +3814,47 @@ Cover schedule status, open items, and look-ahead. Be concise and professional. 
   } catch (e) {
     console.error(e);
     return apiError(res, 500, e.message || "Report failed");
+  }
+});
+
+
+
+app.post("/projects/:projectId/daily-log/from-voice", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { text, weather } = req.body || {};
+    if (!text?.trim()) return apiError(res, 400, "text required");
+    await requireProjectMember(projectId, req.userId);
+    const draft = await draftDailyFromText({ text, weather, enqueueAI });
+    res.json({ draft });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, e.message || "Draft failed");
+  }
+});
+
+app.post("/projects/:projectId/sub-link", requireAuth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { days = 7 } = req.body || {};
+    await requireProjectMember(projectId, req.userId);
+    const token = createSubToken(projectId, days);
+    res.json({ token, url: `/sub/${token}`, expiresInDays: days });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, e.message || "Link failed");
+  }
+});
+
+app.get("/sub/:token", async (req, res) => {
+  try {
+    const data = verifySubToken(req.params.token);
+    if (!data) return apiError(res, 401, "Link expired or invalid");
+    const { rows } = await pool.query(`SELECT name, location FROM projects WHERE id=$1`, [data.projectId]);
+    res.json({ projectId: data.projectId, project: rows[0] || {}, expires: data.exp });
+  } catch (e) {
+    console.error(e);
+    return apiError(res, 500, "Portal error");
   }
 });
 
