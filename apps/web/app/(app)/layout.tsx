@@ -16,6 +16,7 @@ const NAV_GROUPS = [
       { label: "Plans",      path: "plans",      icon: "📐" },
       { label: "Work to Complete", path: "punch", icon: "⚠️" },
       { label: "Schedule",   path: "schedule",   icon: "📅" },
+      { label: "Bid Deadlines", path: "bid-deadlines", icon: "📅" },
             { label: "Daily Log",  path: "daily-log",  icon: "📝" },
       { label: "Forms / JSA",path: "forms",      icon: "📋" },
     ],
@@ -243,6 +244,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="grid grid-cols-3 divide-x divide-slate-100">
                 {[
                   { label: "Schedule",      path: `projects/${activeProjectId}/schedule` },
+                  { label: "Bid Deadlines", path: `projects/${activeProjectId}/bid-deadlines` },
                                     { label: "Forms / JSA",   path: `projects/${activeProjectId}/forms` },
                   { label: "RFIs",          path: `projects/${activeProjectId}/rfis` },
                   { label: "Submittals",    path: `projects/${activeProjectId}/submittals` },
